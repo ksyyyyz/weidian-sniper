@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getAccounts, addAccount, updateAccount, deleteAccount, getProducts } from '../db'
-import jsQR from 'jsqr'
 
 const STATUS_MAP = {
   healthy: { label: '正常', color: 'text-green-400', dot: 'bg-green-500' },
@@ -8,110 +7,118 @@ const STATUS_MAP = {
   unknown: { label: '未检测', color: 'text-gray-500', dot: 'bg-gray-500' },
 }
 
-function QRScanner({ onScan, onClose }) {
-  const [error, setError] = useState('')
-  const [scanning, setScanning] = useState(false)
-  const fileRef = useRef(null)
+function CookieGuide({ onClose, onPasteCookie }) {
+  const [text, setText] = useState('')
+  const [step, setStep] = useState(0)
 
-  const handleFile = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  const steps = [
+    {
+      title: '第一步：下载 Stream',
+      desc: 'App Store 搜索 "Stream" 下载安装',
+      icon: '1'
+    },
+    {
+      title: '第二步：开始抓包',
+      desc: '打开 Stream → 点「开始抓包」→ 切到微店随便逛几个页面',
+      icon: '2'
+    },
+    {
+      title: '第三步：找到 Cookie',
+      desc: '回到 Stream → 点「停止抓包」→ 点「抓包历史」→ 找一条 weidian.com 的请求点进去',
+      icon: '3'
+    },
+    {
+      title: '第四步：复制粘贴',
+      desc: '点「请求」标签 → 长按 Cookie 那一行复制，粘贴到下面输入框',
+      icon: '4'
+    },
+  ]
 
-    setScanning(true)
-    setError('')
-
-    try {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.src = url
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-      })
-
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(img, 0, 0)
-      URL.revokeObjectURL(url)
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const code = jsQR(imageData.data, imageData.width, imageData.height)
-
-      if (!code) {
-        setError('未识别到二维码，请确保拍摄清晰且包含完整二维码')
-        setScanning(false)
-        return
-      }
-
-      // Parse the JSON from QR
-      try {
-        const data = JSON.parse(code.data)
-        if (data.t === 'wd' && data.c) {
-          onScan({ cookie: data.c })
-          onClose()
-          return
-        }
-      } catch {
-        // Not JSON, try as plain text
-        if (code.data.includes('=') && code.data.length > 20) {
-          onScan({ cookie: code.data })
-          onClose()
-          return
-        }
-      }
-
-      setError('不是有效的微店 Cookie 二维码')
-    } catch (err) {
-      setError('图片读取失败: ' + err.message)
+  const handleNext = () => {
+    if (step < steps.length - 1) {
+      setStep(step + 1)
     }
-    setScanning(false)
   }
 
+  const handlePrev = () => {
+    if (step > 0) setStep(step - 1)
+  }
+
+  const handleSubmit = () => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    if (!trimmed.includes('=')) {
+      alert('Cookie 格式不对，请确保复制了完整的 Cookie 行')
+      return
+    }
+    onPasteCookie(trimmed)
+  }
+
+  const current = steps[step]
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
       onClick={onClose}>
-      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-6 w-full max-w-sm mx-4"
+      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md safe-bottom"
         onClick={e => e.stopPropagation()}>
-        <h3 className="text-base font-medium text-white mb-2">扫码同步 Cookie</h3>
-        <p className="text-xs text-gray-500 mb-4">
-          用电脑 Chrome 打开微店并登录，点击扩展图标生成二维码，用手机扫一扫
-        </p>
+        <h3 className="text-base font-medium text-white mb-1">获取微店 Cookie 教程</h3>
+        <p className="text-xs text-gray-500 mb-4">只需操作一次，之后自动保鲜</p>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3 text-xs text-red-400">
-            {error}
-          </div>
-        )}
+        {/* Step indicator */}
+        <div className="flex gap-1 mb-4">
+          {steps.map((_, i) => (
+            <div key={i} className={`flex-1 h-1 rounded-full ${i <= step ? 'bg-purple-500' : 'bg-[#2a2a4a]'}`} />
+          ))}
+        </div>
 
-        {scanning ? (
-          <div className="text-center py-8">
-            <div className="w-10 h-10 border-3 border-[#333] border-t-purple-500 rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-gray-400">识别中...</p>
+        {/* Current step */}
+        <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-4 mb-4">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="w-8 h-8 rounded-full bg-purple-600 text-white text-sm font-bold flex items-center justify-center shrink-0">
+              {current.icon}
+            </span>
+            <span className="text-sm font-medium text-white">{current.title}</span>
           </div>
-        ) : (
-          <div className="space-y-3">
-            <label className="block">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFile}
-                className="hidden"
-              />
-              <span className="block w-full text-center py-12 bg-[#0f0f1a] border-2 border-dashed border-[#3a3a5a] rounded-xl cursor-pointer hover:border-purple-500 transition-colors">
-                <span className="text-4xl block mb-2">📷</span>
-                <span className="text-sm text-gray-400">点击拍照</span>
-              </span>
-            </label>
-            <button onClick={onClose}
-              className="w-full py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
-              取消
+          <p className="text-xs text-gray-400 leading-relaxed">{current.desc}</p>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex gap-2 mb-4">
+          <button onClick={handlePrev} disabled={step === 0}
+            className={`px-3 py-1.5 text-xs rounded-lg ${step === 0 ? 'bg-[#1a1a2e] text-gray-700' : 'bg-[#2a2a4a] text-gray-400 hover:text-white'}`}>
+            上一步
+          </button>
+          {step < steps.length - 1 ? (
+            <button onClick={handleNext}
+              className="flex-1 py-1.5 bg-purple-600 text-white text-xs rounded-lg">
+              下一步
+            </button>
+          ) : (
+            <span className="flex-1" />
+          )}
+        </div>
+
+        {/* Paste area (visible on last step) */}
+        {step === steps.length - 1 && (
+          <div className="space-y-2">
+            <label className="text-xs text-gray-400">粘贴 Cookie</label>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="把复制的 Cookie 粘贴到这里..."
+              className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono resize-none h-20 focus:outline-none focus:border-purple-500"
+            />
+            <button onClick={handleSubmit}
+              className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl active:scale-95 transition-transform">
+              确认并添加账号
             </button>
           </div>
         )}
+
+        <button onClick={onClose}
+          className="w-full mt-3 py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
+          关闭
+        </button>
       </div>
     </div>
   )
@@ -121,7 +128,7 @@ export default function Accounts() {
   const [accounts, setAccounts] = useState([])
   const [productCounts, setProductCounts] = useState({})
   const [showForm, setShowForm] = useState(false)
-  const [showScanner, setShowScanner] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', cookie: '', userAgent: '', proxyNote: '', enabled: true })
 
@@ -174,13 +181,13 @@ export default function Accounts() {
     loadData()
   }
 
-  const handleQRScan = (data) => {
+  const handleCookiePaste = (cookie) => {
     setForm(prev => ({
       ...prev,
-      cookie: data.cookie,
-      name: prev.name || '扫码导入'
+      cookie: cookie,
+      name: prev.name || '微店账号'
     }))
-    setShowScanner(false)
+    setShowGuide(false)
     setShowForm(true)
   }
 
@@ -199,10 +206,10 @@ export default function Accounts() {
         </h2>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowScanner(true)}
+            onClick={() => setShowGuide(true)}
             className="text-xs px-3 py-1.5 border border-purple-500/30 text-purple-400 rounded-lg active:scale-95 transition-transform"
           >
-            扫码同步
+            获取Cookie教程
           </button>
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
@@ -217,7 +224,7 @@ export default function Accounts() {
         <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl p-8 text-center">
           <p className="text-gray-500 text-sm">还没有添加账号</p>
           <p className="text-gray-600 text-xs mt-1">
-            点「扫码同步」用二维码获取，或点「+ 添加」手动粘贴 Cookie
+            点「获取Cookie教程」按步骤获取，或点「+ 添加」手动粘贴
           </p>
         </div>
       ) : (
@@ -284,11 +291,11 @@ export default function Accounts() {
         </div>
       )}
 
-      {/* QR Scanner modal */}
-      {showScanner && (
-        <QRScanner
-          onScan={handleQRScan}
-          onClose={() => setShowScanner(false)}
+      {/* Cookie Guide modal */}
+      {showGuide && (
+        <CookieGuide
+          onPasteCookie={handleCookiePaste}
+          onClose={() => setShowGuide(false)}
         />
       )}
 
@@ -312,7 +319,7 @@ export default function Accounts() {
                 <label className="text-xs text-gray-500 block mb-1">Cookie *</label>
                 <textarea required value={form.cookie} onChange={e => setForm({...form, cookie: e.target.value})}
                   className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-purple-500 resize-none h-24 font-mono"
-                  placeholder="从微店抓取的 Cookie 字符串，或扫码同步" />
+                  placeholder="用 Stream 抓包获取的 Cookie 字符串" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">自定义 UA（可选）</label>
