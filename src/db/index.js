@@ -10,6 +10,16 @@ db.version(1).stores({
   configSnapshots: '++id, name, timestamp'
 })
 
+db.version(2).stores({
+  accounts: '++id, name, enabled, createdAt',
+  products: '++id, name, enabled, accountId, createdAt',
+  logs: '++id, timestamp, level, type, accountId, productId, statusCode',
+  settings: '&key',
+  configSnapshots: '++id, name, timestamp',
+  purchaseTemplates: '++id, name, accountId, createdAt',
+  templateSteps: '++id, templateId, step, url'
+})
+
 // Accounts
 export async function getAccounts() {
   return db.accounts.orderBy('createdAt').reverse().toArray()
@@ -227,13 +237,54 @@ export async function importConfig(jsonStr) {
 }
 
 export async function resetAll() {
-  await db.transaction('rw', db.accounts, db.products, db.logs, db.settings, db.configSnapshots, () => {
+  await db.transaction('rw', db.accounts, db.products, db.logs, db.settings, db.configSnapshots, db.purchaseTemplates, db.templateSteps, () => {
     db.accounts.clear()
     db.products.clear()
     db.logs.clear()
     db.settings.clear()
     db.configSnapshots.clear()
+    db.purchaseTemplates.clear()
+    db.templateSteps.clear()
   })
+}
+
+// Purchase Templates — recorded POST request sequences for replay
+export async function getTemplates(accountId) {
+  let q = db.purchaseTemplates.orderBy('createdAt').reverse()
+  if (accountId) q = q.filter(t => t.accountId === Number(accountId))
+  return q.toArray()
+}
+
+export async function getTemplate(id) {
+  return db.purchaseTemplates.get(Number(id))
+}
+
+export async function getTemplateSteps(templateId) {
+  return db.templateSteps.where('templateId').equals(Number(templateId)).sortBy('step')
+}
+
+export async function addTemplate(data) {
+  return db.purchaseTemplates.add({
+    name: data.name,
+    accountId: data.accountId ? Number(data.accountId) : null,
+    createdAt: Date.now()
+  })
+}
+
+export async function addTemplateStep(data) {
+  return db.templateSteps.add({
+    templateId: Number(data.templateId),
+    step: data.step,
+    name: data.name,
+    url: data.url,
+    body: data.body,
+    order: data.order ?? data.step
+  })
+}
+
+export async function deleteTemplate(id) {
+  await db.templateSteps.where('templateId').equals(Number(id)).delete()
+  await db.purchaseTemplates.delete(Number(id))
 }
 
 export default db

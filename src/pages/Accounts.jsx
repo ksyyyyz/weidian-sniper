@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getAccounts, addAccount, updateAccount, deleteAccount, getProducts, addProduct, parseAccountContext } from '../db'
-import { parseHAR, getHARSummary } from '../utils/har-parser'
+import { getAccounts, addAccount, updateAccount, deleteAccount, getProducts, addProduct, parseAccountContext, getTemplates, addTemplate, addTemplateStep, deleteTemplate, getTemplateSteps } from '../db'
+import { parseHAR, getHARSummary, extractPurchaseTemplate } from '../utils/har-parser'
 
 const STATUS_MAP = {
   healthy: { label: '正常', color: 'text-green-400', dot: 'bg-green-500' },
@@ -331,6 +331,231 @@ function ContextGuide({ onClose, onImport }) {
   )
 }
 
+function TemplateImporter({ accountId, onClose, onImported }) {
+  const [step, setStep] = useState(0) // 0=input, 1=preview, 2=done
+  const [harText, setHarText] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [templateName, setTemplateName] = useState('')
+  const [templateSteps, setTemplateSteps] = useState([])
+  const [totalFound, setTotalFound] = useState(0)
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setLoading(true)
+    setError('')
+    try {
+      const text = await file.text()
+      processHAR(text)
+    } catch (err) {
+      setError(err.message)
+      setLoading(false)
+    }
+  }
+
+  const handlePaste = () => {
+    const text = harText.trim()
+    if (!text) return
+    setLoading(true)
+    setError('')
+    processHAR(text)
+  }
+
+  const processHAR = (text) => {
+    const result = extractPurchaseTemplate(text)
+    if (result.error) {
+      setError(result.error)
+      setLoading(false)
+      return
+    }
+    setTemplateSteps(result.steps)
+    setTotalFound(result.totalFound)
+    setTemplateName(result.templateName)
+    setLoading(false)
+    setStep(1)
+  }
+
+  const handleSave = async () => {
+    if (!templateSteps.length) return
+    setLoading(true)
+    try {
+      const tplId = await addTemplate({ name: templateName, accountId })
+      for (let i = 0; i < templateSteps.length; i++) {
+        const s = templateSteps[i]
+        await addTemplateStep({
+          templateId: tplId,
+          step: i,
+          name: s.name,
+          url: s.url,
+          body: s.rawBody,
+          order: i
+        })
+      }
+      setStep(2)
+      onImported?.(tplId)
+    } catch (err) {
+      setError('保存失败: ' + err.message)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
+      onClick={onClose}>
+      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-lg min-h-0 max-h-[80vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Step 0: Input HAR */}
+        {step === 0 && (
+          <>
+            <h3 className="text-base font-medium text-white mb-1">录制下单模板</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              在微店小程序走一遍完整下单流程（浏览→加购→下单），Fiddler 导出 HAR 粘贴到这里
+            </p>
+
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-4 text-xs text-blue-400">
+              <b>操作步骤：</b><br />
+              1. 微信PC版 → 微店小程序 → 随便找个商品<br />
+              2. 完整走一遍：加购物车 → 去结算 → 提交订单<br />
+              3. Fiddler → File → Export Sessions → All Sessions → HAR JSON<br />
+              4. 把导出的 HAR 文件内容粘贴或拖到下方
+            </div>
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3 text-xs text-red-400 whitespace-pre-line">
+                {error}
+              </div>
+            )}
+
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="w-10 h-10 border-3 border-[#333] border-t-purple-500 rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-gray-400">解析中...</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">粘贴 HAR 内容</label>
+                  <textarea
+                    value={harText}
+                    onChange={e => setHarText(e.target.value)}
+                    placeholder="Ctrl+V 粘贴 HAR 内容..."
+                    className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-[10px] text-gray-300 font-mono resize-none h-28 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <button onClick={handlePaste}
+                  disabled={!harText.trim()}
+                  className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl disabled:opacity-40 active:scale-95 transition-transform">
+                  解析模板
+                </button>
+
+                <div className="relative py-2">
+                  <div className="absolute inset-x-0 top-1/2 border-t border-[#2a2a4a]" />
+                  <span className="relative flex justify-center">
+                    <span className="bg-[#1a1a2e] px-3 text-[10px] text-gray-600">或者上传文件</span>
+                  </span>
+                </div>
+
+                <label className="block">
+                  <input type="file" accept=".har,.json,.txt,text/*" onChange={handleFile} className="hidden" />
+                  <span className="block w-full text-center py-3 bg-[#0f0f1a] border border-dashed border-[#3a3a5a] rounded-xl cursor-pointer active:scale-[0.98] transition-transform">
+                    <span className="text-sm text-gray-400">选择 HAR 文件</span>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <button onClick={onClose}
+              className="w-full mt-3 py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
+              取消
+            </button>
+          </>
+        )}
+
+        {/* Step 1: Preview & confirm */}
+        {step === 1 && (
+          <>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-2xl">📋</span>
+              <div>
+                <h3 className="text-base font-medium text-white">识别到下单流程</h3>
+                <p className="text-xs text-gray-500">共 {totalFound} 条微店请求，识别 {templateSteps.length} 个下单步骤</p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 block mb-1">模板名称</label>
+              <input value={templateName} onChange={e => setTemplateName(e.target.value)}
+                className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500" />
+            </div>
+
+            <div className="space-y-2 mb-4">
+              {templateSteps.map((s, i) => (
+                <div key={i} className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-5 h-5 rounded-full bg-purple-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                      {i + 1}
+                    </span>
+                    <span className="text-xs font-medium text-white">{s.name}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500 truncate">{s.url}</p>
+                  {Object.keys(s.replacements).length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {Object.entries(s.replacements).map(([k, v]) => (
+                        <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">
+                          {k} → {v}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3 text-xs text-red-400">{error}</div>
+            )}
+
+            <button onClick={handleSave}
+              disabled={loading}
+              className="w-full py-3 bg-purple-600 text-white text-sm font-medium rounded-xl active:scale-95 transition-transform mb-2">
+              {loading ? '保存中...' : '确认保存模板'}
+            </button>
+            <button onClick={() => setStep(0)}
+              className="w-full py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
+              重新选择
+            </button>
+          </>
+        )}
+
+        {/* Step 2: Done */}
+        {step === 2 && (
+          <>
+            <div className="text-center py-4">
+              <span className="text-3xl">✅</span>
+              <h3 className="text-base font-medium text-white mt-2">模板保存成功</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {templateSteps.length} 个步骤已保存。添加商品时绑定此模板即可一键抢购。
+              </p>
+
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mt-4 text-xs text-green-400 text-left">
+                <b>下一步：</b><br />
+                去「商品」页 → 添加商品 → 在"下单模板"下拉框里选「{templateName}」→ 开启监控
+              </div>
+            </div>
+
+            <button onClick={onClose}
+              className="w-full mt-4 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl">
+              完成
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState([])
   const [productCounts, setProductCounts] = useState({})
@@ -338,16 +563,22 @@ export default function Accounts() {
   const [showGuide, setShowGuide] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', context: '', userAgent: '', proxyNote: '', enabled: true })
+  const [showTemplateImporter, setShowTemplateImporter] = useState(null) // accountId to import template for
+  const [templateCounts, setTemplateCounts] = useState({})
 
   const loadData = useCallback(async () => {
     const accts = await getAccounts()
     setAccounts(accts)
     const counts = {}
+    const tCounts = {}
     for (const a of accts) {
       const prods = await getProducts(a.id)
       counts[a.id] = prods.length
+      const tmpls = await getTemplates(a.id)
+      tCounts[a.id] = tmpls.length
     }
     setProductCounts(counts)
+    setTemplateCounts(tCounts)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
@@ -522,6 +753,10 @@ export default function Accounts() {
                     <span className={`text-[10px] ${st.color}`}>{st.label}</span>
                   </div>
                   <div className="flex gap-1">
+                    <button onClick={() => setShowTemplateImporter(a.id)}
+                      className="text-xs px-2 py-1 bg-purple-500/10 text-purple-400 rounded hover:bg-purple-500/20">
+                      录制模板
+                    </button>
                     <button onClick={() => handleEdit(a)}
                       className="text-xs px-2 py-1 bg-[#2a2a4a] text-gray-400 rounded hover:text-white">
                       编辑
@@ -535,14 +770,20 @@ export default function Accounts() {
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <span className="text-gray-600">关联商品: </span>
-                    <span className="text-gray-400">{productCounts[a.id] || 0} 个</span>
-                  </div>
-                  <div>
                     <span className="text-gray-600">Token: </span>
                     <span className={hasToken(a) ? 'text-green-400' : 'text-red-400'}>
                       {hasToken(a) ? '已配置' : '未配置'}
                     </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">下单模板: </span>
+                    <span className={templateCounts[a.id] ? 'text-purple-400' : 'text-gray-500'}>
+                      {templateCounts[a.id] || 0} 个
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">关联商品: </span>
+                    <span className="text-gray-400">{productCounts[a.id] || 0} 个</span>
                   </div>
                   {a.duid && (
                     <div className="col-span-2">
@@ -582,6 +823,15 @@ export default function Accounts() {
         <ContextGuide
           onImport={handleImport}
           onClose={() => setShowGuide(false)}
+        />
+      )}
+
+      {/* Template Importer modal */}
+      {showTemplateImporter && (
+        <TemplateImporter
+          accountId={showTemplateImporter}
+          onClose={() => setShowTemplateImporter(null)}
+          onImported={() => { setShowTemplateImporter(null); loadData() }}
         />
       )}
 

@@ -285,6 +285,165 @@ function formatCookieString(cookieMap) {
   return parts.join('; ')
 }
 
+/**
+ * Extract a purchase template from raw HAR data.
+ * Auto-identifies: 商品详情 → 加购物车 → 创建订单 → 确认支付
+ * Returns template steps with {{itemId}} {{skuId}} {{shopId}} placeholders.
+ */
+export function extractPurchaseTemplate(harInput) {
+  // Parse HAR
+  let har
+  try {
+    har = typeof harInput === 'string' ? JSON.parse(harInput) : harInput
+  } catch {
+    return { error: 'HAR JSON 解析失败' }
+  }
+
+  // Extract entries (same logic as parseHAR)
+  let entries = []
+  if (har.log?.entries) {
+    entries = har.log.entries
+  } else if (Array.isArray(har.entries)) {
+    entries = har.entries
+  } else if (Array.isArray(har)) {
+    entries = har
+  } else {
+    for (const key of Object.keys(har)) {
+      const val = har[key]
+      if (val?.log?.entries) { entries = val.log.entries; break }
+      if (Array.isArray(val?.entries)) { entries = val.entries; break }
+      if (Array.isArray(val) && val.length > 0 && val[0]?.request) { entries = val; break }
+    }
+  }
+
+  if (!entries.length) {
+    return { error: '没有找到任何请求记录' }
+  }
+
+  // Filter to thor.weidian.com POST requests
+  const weidianPosts = entries.filter(e => {
+    const url = e?.request?.url || e?.request?.URL || ''
+    return url.includes('thor.weidian.com') && e?.request?.method?.toUpperCase() === 'POST'
+  })
+
+  if (!weidianPosts.length) {
+    return { error: '没有找到 thor.weidian.com 的 POST 请求。请确认在微店小程序里走了完整的下单流程。' }
+  }
+
+  const steps = []
+  const seen = new Set()
+
+  // URL pattern → step name mapping
+  const STEP_PATTERNS = [
+    { pattern: /detail\/getItemDetail/i, name: '查看商品详情', step: 0 },
+    { pattern: /detail\/(get|fetch)/i, name: '查看商品详情', step: 0 },
+    { pattern: /cart\/add/i, name: '加入购物车', step: 1 },
+    { pattern: /cart/i, name: '加入购物车', step: 1 },
+    { pattern: /(order|trade)\/create/i, name: '创建订单', step: 2 },
+    { pattern: /order\/confirm/i, name: '确认订单', step: 2 },
+    { pattern: /(order|trade)\/submit/i, name: '提交支付', step: 3 },
+    { pattern: /order\/pay/i, name: '确认支付', step: 3 },
+    { pattern: /pay/i, name: '确认支付', step: 3 },
+  ]
+
+  for (const entry of weidianPosts) {
+    const url = entry?.request?.url || entry?.request?.URL || ''
+
+    const dedupeKey = url.replace(/itemId=\d+/g, '').replace(/shopId=\d+/g, '').replace(/itemID=\d+/g, '')
+    if (seen.has(dedupeKey)) continue
+    seen.add(dedupeKey)
+
+    // Extract POST body
+    let rawBody = ''
+    if (entry.request?.postData?.text) {
+      rawBody = entry.request.postData.text
+    } else if (entry.request?.body?.text) {
+      rawBody = entry.request.body.text
+    } else if (entry.request?.body) {
+      rawBody = typeof entry.request.body === 'string' ? entry.request.body : ''
+    }
+
+    if (!rawBody) continue
+
+    // Match step type
+    let matched = null
+    for (const sp of STEP_PATTERNS) {
+      if (sp.pattern.test(url)) {
+        matched = sp
+        break
+      }
+    }
+    if (!matched) continue
+
+    // Extract param from body (param=...&context=...)
+    const paramMatch = rawBody.match(/param=([^&]+)/)
+    let paramJson = null
+    let paramStr = ''
+    if (paramMatch) {
+      paramStr = decodeURIComponent(paramMatch[1])
+      try { paramJson = JSON.parse(paramStr) } catch { paramJson = null }
+    } else {
+      try {
+        const decoded = decodeURIComponent(rawBody)
+        paramJson = JSON.parse(decoded)
+        paramStr = decoded
+      } catch {
+        paramStr = rawBody
+      }
+    }
+
+    // Auto-detect replaceable fields
+    const replacements = {}
+    if (paramJson) {
+      for (const key of Object.keys(paramJson)) {
+        const lk = key.toLowerCase()
+        if (/itemid|vitemid|productid|item_id/.test(lk)) {
+          replacements[key] = '{{itemId}}'
+        } else if (/skuid|sku_id/.test(lk)) {
+          replacements[key] = '{{skuId}}'
+        } else if (/shopid|vshopid|shop_id/.test(lk)) {
+          replacements[key] = '{{shopId}}'
+        }
+      }
+    }
+
+    steps.push({
+      step: matched.step,
+      name: matched.name,
+      url,
+      rawBody,
+      paramStr,
+      paramJson,
+      replacements
+    })
+  }
+
+  if (!steps.length) {
+    return { error: '在 thor.weidian.com 中找到了 POST 请求，但未能识别下单步骤。\n请确认在微店小程序里走了完整流程（浏览→加购→下单）。' }
+  }
+
+  // Sort by step order, deduplicate same step type (keep last)
+  steps.sort((a, b) => a.step - b.step)
+
+  const final = []
+  const usedSteps = new Set()
+  for (const s of steps) {
+    if (usedSteps.has(s.step)) {
+      const idx = final.findIndex(f => f.step === s.step)
+      if (idx >= 0) final[idx] = s
+    } else {
+      usedSteps.add(s.step)
+      final.push(s)
+    }
+  }
+
+  return {
+    steps: final,
+    totalFound: weidianPosts.length,
+    templateName: `下单模板 ${new Date().toLocaleDateString('zh-CN')}`
+  }
+}
+
 export function getHARSummary(result) {
   const lines = []
   if (result.cookies) {

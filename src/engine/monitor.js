@@ -2,6 +2,7 @@ import { getEnabledProducts, getSetting, getAccount } from '../db'
 import { apiGet, apiPost } from './fetcher'
 import { isInCooldown, isBanned, isWarmupWindow, getMonitorInterval, coolDown, resetBackoff } from './anti-ban'
 import { executeSnipe } from './sniper'
+import { executeTemplateSnipe } from './template-sniper'
 import { getCorrectedTime, getMsUntilTarget } from './time-sync'
 import { sendFeishu, playAlert } from './notifier'
 import { info, error, success } from '../utils/logger'
@@ -159,7 +160,11 @@ async function pollProduct(product, isWarmup) {
             accountId: product.accountId,
             errorMessage: '检测到商品可购买，触发抢购'
           })
-          executeSnipe(product)
+          if (product.templateId) {
+            executeTemplateSnipe(product.templateId, product)
+          } else {
+            executeSnipe(product)
+          }
         }
       }
     }

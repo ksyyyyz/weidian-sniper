@@ -1,24 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getProducts, addProduct, updateProduct, deleteProduct, batchUpdateProducts, batchDeleteProducts, getAccounts } from '../db'
+import { getProducts, addProduct, updateProduct, deleteProduct, batchUpdateProducts, batchDeleteProducts, getAccounts, getTemplates } from '../db'
 
 export default function Products() {
   const [products, setProducts] = useState([])
   const [accounts, setAccounts] = useState([])
+  const [templates, setTemplates] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [selected, setSelected] = useState(new Set())
-  const [form, setForm] = useState({ name: '', url: '', sku: '', targetPrice: '', accountId: '', enabled: true })
+  const [form, setForm] = useState({ name: '', url: '', sku: '', targetPrice: '', accountId: '', templateId: '', enabled: true })
 
   const loadProducts = useCallback(async () => {
     const [prods, accts] = await Promise.all([getProducts(), getAccounts()])
     setProducts(prods)
     setAccounts(accts)
+    const allTpls = await getTemplates()
+    setTemplates(allTpls)
   }, [])
 
   useEffect(() => { loadProducts() }, [loadProducts])
 
   const resetForm = () => {
-    setForm({ name: '', url: '', sku: '', targetPrice: '', accountId: '', enabled: true })
+    setForm({ name: '', url: '', sku: '', targetPrice: '', accountId: '', templateId: '', enabled: true })
     setEditing(null)
     setShowForm(false)
   }
@@ -29,6 +32,7 @@ export default function Products() {
       ...form,
       targetPrice: form.targetPrice ? Number(form.targetPrice) : null,
       accountId: form.accountId ? Number(form.accountId) : null,
+      templateId: form.templateId ? Number(form.templateId) : null,
       enabled: form.enabled ? 1 : 0
     }
     if (editing) {
@@ -47,6 +51,7 @@ export default function Products() {
       sku: p.sku || '',
       targetPrice: p.targetPrice || '',
       accountId: p.accountId || '',
+      templateId: p.templateId || '',
       enabled: p.enabled === 1
     })
     setEditing(p.id)
@@ -164,6 +169,11 @@ export default function Products() {
                     {p.sku && <span className="text-gray-500">SKU: {p.sku}</span>}
                     {p.targetPrice && <span className="text-purple-400">¥{p.targetPrice}</span>}
                     <span className="text-gray-600">{getAccountName(p.accountId)}</span>
+                    {p.templateId && (
+                      <span className="text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded text-[10px]">
+                        {templates.find(t => t.id === p.templateId)?.name || '模板'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -227,6 +237,21 @@ export default function Products() {
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">下单模板</label>
+                <select value={form.templateId} onChange={e => setForm({...form, templateId: e.target.value})}
+                  className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500">
+                  <option value="">不使用模板</option>
+                  {templates.filter(t => !form.accountId || t.accountId === Number(form.accountId)).map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                {templates.filter(t => !form.accountId || t.accountId === Number(form.accountId)).length === 0 && (
+                  <p className="text-[10px] text-gray-600 mt-1">
+                    还没有模板，先去「账号」页录制
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={form.enabled} onChange={e => setForm({...form, enabled: e.target.checked})}
