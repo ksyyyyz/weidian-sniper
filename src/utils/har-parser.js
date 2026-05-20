@@ -84,14 +84,8 @@ export function parseHAR(harJson) {
   }
 
   if (cookieMap.size === 0) {
-    throw new Error(
-      `找到了 ${diag.weidianEntries.length} 条微店请求，但未提取到 Cookie。\n` +
-      `微店域名: ${diag.weidianDomains.join(', ')}\n\n` +
-      '可能原因：\n' +
-      '1. 微店APP使用了证书绑定（SSL Pinning），Stream 无法解密\n' +
-      '2. 请求头中没有 Cookie 字段\n\n' +
-      '请尝试用「手动粘贴 Cookie」方式，或换用电脑端抓包工具（mitmproxy/Fiddler）'
-    )
+    // Token/Context auth mode: no cookies needed, but still extract products
+    diag.noCookies = true
   }
 
   // Extract products

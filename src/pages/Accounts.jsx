@@ -619,6 +619,110 @@ function TemplateImporter({ accountId, onClose, onImported }) {
   )
 }
 
+function TemplateManager({ accountId, onClose, onDeleted }) {
+  const [templates, setTemplates] = useState([])
+  const [expanded, setExpanded] = useState(null)
+  const [stepDetails, setStepDetails] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    (async () => {
+      const all = await getTemplates(accountId)
+      setTemplates(all)
+      setLoading(false)
+    })()
+  }, [accountId])
+
+  const toggleExpand = async (tplId) => {
+    if (expanded === tplId) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(tplId)
+    if (!stepDetails[tplId]) {
+      const steps = await getTemplateSteps(tplId)
+      setStepDetails(prev => ({ ...prev, [tplId]: steps }))
+    }
+  }
+
+  const handleDelete = async (tplId) => {
+    if (!confirm('确定删除这个模板？')) return
+    await deleteTemplate(tplId)
+    setTemplates(prev => prev.filter(t => t.id !== tplId))
+    onDeleted?.()
+  }
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onClick={onClose}>
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+          <div className="text-center py-8">
+            <div className="w-10 h-10 border-3 border-[#333] border-t-purple-500 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-gray-400">加载中...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-lg min-h-0 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-medium text-white mb-1">下单模板管理</h3>
+        <p className="text-xs text-gray-500 mb-4">{templates.length} 个模板</p>
+
+        {templates.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-gray-500 text-sm">还没有录制模板</p>
+            <p className="text-gray-600 text-xs mt-1">点账号卡上的「录制模板」按钮来创建</p>
+          </div>
+        ) : (
+          <div className="space-y-2 mb-4">
+            {templates.map(tpl => (
+              <div key={tpl.id} className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <button onClick={() => toggleExpand(tpl.id)} className="flex items-center gap-2 flex-1 text-left min-w-0">
+                    <span className="text-[10px] text-gray-500">{expanded === tpl.id ? '▼' : '▶'}</span>
+                    <span className="text-sm text-gray-200 truncate">{tpl.name}</span>
+                    <span className="text-[10px] text-gray-600">{tpl.createdAt ? new Date(tpl.createdAt).toLocaleDateString('zh-CN') : ''}</span>
+                  </button>
+                  <button onClick={() => handleDelete(tpl.id)}
+                    className="text-xs px-2 py-1 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 shrink-0 ml-2">
+                    删除
+                  </button>
+                </div>
+
+                {expanded === tpl.id && (
+                  <div className="border-t border-[#2a2a4a] px-3 py-2 space-y-1.5">
+                    {stepDetails[tpl.id]?.length > 0 ? (
+                      stepDetails[tpl.id].map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <span className="w-4 h-4 rounded-full bg-purple-600/30 text-purple-400 text-[9px] font-bold flex items-center justify-center shrink-0">
+                            {i + 1}
+                          </span>
+                          <span className="text-gray-300">{s.name}</span>
+                          <span className="text-[10px] text-gray-600 truncate">{s.url?.split('/').pop()}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-gray-600">加载步骤中...</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={onClose}
+          className="w-full py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
+          关闭
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState([])
   const [productCounts, setProductCounts] = useState({})
@@ -627,6 +731,7 @@ export default function Accounts() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', context: '', userAgent: '', proxyNote: '', enabled: true })
   const [showTemplateImporter, setShowTemplateImporter] = useState(null) // accountId to import template for
+  const [showTemplateManager, setShowTemplateManager] = useState(null) // accountId to manage templates for
   const [templateCounts, setTemplateCounts] = useState({})
 
   const loadData = useCallback(async () => {
@@ -840,9 +945,11 @@ export default function Accounts() {
                   </div>
                   <div>
                     <span className="text-gray-600">下单模板: </span>
-                    <span className={templateCounts[a.id] ? 'text-purple-400' : 'text-gray-500'}>
+                    <button
+                      onClick={() => setShowTemplateManager(a.id)}
+                      className={templateCounts[a.id] ? 'text-purple-400 hover:text-purple-300 underline underline-offset-2' : 'text-gray-500'}>
                       {templateCounts[a.id] || 0} 个
-                    </span>
+                    </button>
                   </div>
                   <div>
                     <span className="text-gray-600">关联商品: </span>
@@ -895,6 +1002,15 @@ export default function Accounts() {
           accountId={showTemplateImporter}
           onClose={() => setShowTemplateImporter(null)}
           onImported={() => { setShowTemplateImporter(null); loadData() }}
+        />
+      )}
+
+      {/* Template Manager modal */}
+      {showTemplateManager && (
+        <TemplateManager
+          accountId={showTemplateManager}
+          onClose={() => setShowTemplateManager(null)}
+          onDeleted={() => { setShowTemplateManager(null); loadData() }}
         />
       )}
 
