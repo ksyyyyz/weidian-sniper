@@ -20,7 +20,7 @@ function TabBar() {
   const current = location.pathname === '/' ? '/' : '/' + location.pathname.split('/')[1]
 
   return (
-    <nav className="shrink-0 bg-[#1a1a2e] border-t border-[#2a2a4a] tab-safe z-50">
+    <nav className="bg-[#1a1a2e] border-t border-[#2a2a4a] tab-safe z-50">
       <div className="flex justify-around items-center h-14 max-w-lg mx-auto">
         {tabs.map(tab => (
           <button
@@ -51,15 +51,15 @@ function AppContent() {
   }, [])
 
   return (
-    <div className="absolute inset-0 flex flex-col max-w-lg mx-auto w-full">
-      <header className="safe-top px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a] shrink-0">
+    <div className="absolute inset-0 grid grid-rows-[auto_1fr_auto] max-w-lg mx-auto w-full">
+      <header className="safe-top px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a]">
         <h1 className="text-base font-semibold text-white tracking-wide">微店抢购助手</h1>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
-          v4
+          v5
         </span>
       </header>
 
-      <main className="flex-1 min-h-0 overflow-y-auto ios-scroll px-4">
+      <main className="overflow-y-auto ios-scroll px-4">
         <Routes>
           <Route path="/" element={<Monitor />} />
           <Route path="/products" element={<Products />} />
