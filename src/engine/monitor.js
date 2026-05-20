@@ -101,15 +101,21 @@ export async function startMonitoring() {
 }
 
 async function pollProduct(product, isWarmup) {
-  const productUrl = product.url
-  if (!productUrl) return
+  if (!product.sku) {
+    await error('poll_skip', {
+      productId: product.id,
+      accountId: product.accountId,
+      errorMessage: `商品「${product.name}」没有 SKU，已跳过。请设置商品 SKU。`
+    })
+    return
+  }
 
   try {
     const startTime = performance.now()
 
     // Determine if account uses token auth → use POST to Weidian API
     const account = product.accountId ? await getAccount(product.accountId) : null
-    const useTokenAuth = account && (account.contextRaw || account.token)
+    const useTokenAuth = account && (account.contextRaw || account.contextEncoded || account.token)
 
     let result
     if (useTokenAuth) {
@@ -122,12 +128,13 @@ async function pollProduct(product, isWarmup) {
         timeout: isWarmup ? 5000 : 10000
       })
     } else {
-      result = await apiGet(productUrl, {
-        accountId: product.accountId,
+      // No token auth configured — skip this product entirely
+      await error('poll_skip', {
         productId: product.id,
-        skipDelay: isWarmup,
-        timeout: isWarmup ? 5000 : 10000
+        accountId: product.accountId,
+        errorMessage: `商品「${product.name}」没有 Token 认证，已跳过。请检查账号配置。`
       })
+      return
     }
 
     const { status, data } = result
@@ -187,34 +194,31 @@ async function pollProduct(product, isWarmup) {
  * This is a template — actual parsing depends on Weidian's API response format.
  */
 function extractProductState(data, product) {
-  // Default: try to find common patterns in response
-  if (!data) return { buyable: false, stock: 0, status: 'unknown' }
+  if (!data) return { buyable: false, stock: 0, status: 'unknown', timestamp: Date.now() }
 
-  // Try common JSON structures for ecommerce APIs
+  // Weidian API response: {status:{code:0}, result:{default_model:{item_info:{...}}}}
+  const itemInfo = data?.result?.default_model?.item_info
+    || data?.result?.item_info
+    || data?.data
+
+  if (itemInfo) {
+    const stock = itemInfo.stock ?? itemInfo.totalStock ?? 0
+    const buyable = itemInfo.itemSellable === true && stock > 0
+    const status = buyable ? 'on_sale' : (itemInfo.flag?.is_status_off_shelve ? 'off_shelf' : 'unknown')
+    return { buyable, stock, status, timestamp: Date.now() }
+  }
+
+  // Fallback for legacy H5 page scraping
   const buyable = (
     data?.data?.stock > 0 ||
     data?.data?.buyable === true ||
     data?.data?.status === 'on_sale' ||
     data?.stock > 0 ||
-    data?.status === 'on_sale' ||
-    data?.sku?.stock > 0 ||
-    data?.data?.skuList?.some?.(s => s.stock > 0)
+    data?.status === 'on_sale'
   )
 
-  const stock = (
-    data?.data?.stock ??
-    data?.stock ??
-    data?.data?.totalStock ??
-    data?.sku?.stock ??
-    0
-  )
-
-  const status = (
-    data?.data?.status ??
-    data?.status ??
-    data?.data?.saleStatus ??
-    'unknown'
-  )
+  const stock = data?.data?.stock ?? data?.stock ?? 0
+  const status = data?.data?.status ?? data?.status ?? 'unknown'
 
   return { buyable, stock, status, timestamp: Date.now() }
 }
