@@ -110,13 +110,35 @@ export default function Settings() {
 
       {/* Target time */}
       <Section title="开抢时间">
+        <p className="text-[10px] text-gray-500 mb-2">设置秒杀活动的预计开始时间，到点前会自动进入预热模式</p>
         <input
           type="datetime-local"
           value={settings.targetTime || ''}
           onChange={e => update('targetTime', e.target.value)}
-          className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500"
+          className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 mb-2"
         />
-        <p className="text-[10px] text-gray-600 mt-1">设置秒杀活动的预计开始时间</p>
+        <p className="text-[10px] text-gray-600 mb-2">
+          当前: {settings.targetTime ? new Date(settings.targetTime).toLocaleString('zh-CN') : '未设置'}
+        </p>
+        {/* Quick presets */}
+        <div className="flex gap-1.5 flex-wrap">
+          {[
+            { label: '1分钟后', get: () => new Date(Date.now() + 60000).toISOString().slice(0, 16) },
+            { label: '5分钟后', get: () => new Date(Date.now() + 300000).toISOString().slice(0, 16) },
+            { label: '今晚20:00', get: () => { const d = new Date(); d.setHours(20, 0, 0, 0); return d.toISOString().slice(0, 16) } },
+            { label: '今晚21:00', get: () => { const d = new Date(); d.setHours(21, 0, 0, 0); return d.toISOString().slice(0, 16) } },
+            { label: '明早10:00', get: () => { const d = new Date(Date.now() + 86400000); d.setHours(10, 0, 0, 0); return d.toISOString().slice(0, 16) } },
+            { label: '清除', get: () => '' },
+          ].map(p => (
+            <button
+              key={p.label}
+              onClick={() => update('targetTime', p.get())}
+              className="text-[10px] px-2 py-1 rounded-full bg-[#2a2a4a] text-gray-400 hover:bg-purple-600 hover:text-white transition-colors"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </Section>
 
       {/* Feishu */}
