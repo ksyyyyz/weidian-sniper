@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { getAccounts, addAccount, updateAccount, deleteAccount, getProducts, addProduct } from '../db'
+import { useState, useEffect, useCallback } from 'react'
+import { getAccounts, addAccount, updateAccount, deleteAccount, getProducts, addProduct, parseAccountContext } from '../db'
 import { parseHAR, getHARSummary } from '../utils/har-parser'
 
 const STATUS_MAP = {
@@ -8,15 +8,13 @@ const STATUS_MAP = {
   unknown: { label: '未检测', color: 'text-gray-500', dot: 'bg-gray-500' },
 }
 
-function CookieGuide({ onClose, onImport }) {
-  const [mode, setMode] = useState(null) // null = choose, 'har' = HAR import, 'manual' = step guide
+function ContextGuide({ onClose, onImport }) {
+  const [mode, setMode] = useState(null)
   const [harResult, setHarResult] = useState(null)
   const [harError, setHarError] = useState('')
   const [harLoading, setHarLoading] = useState(false)
   const [harText, setHarText] = useState('')
-
-  // Manual cookie text
-  const [cookieText, setCookieText] = useState('')
+  const [contextText, setContextText] = useState('')
 
   const handleHARFile = async (e) => {
     const file = e.target.files[0]
@@ -43,8 +41,8 @@ function CookieGuide({ onClose, onImport }) {
   const processHAR = (text) => {
     try {
       const result = parseHAR(text)
-      if (!result.cookies) {
-        setHarError('未找到微店 Cookie，请确认抓包时访问过微店')
+      if (!result.cookies && !result.products.length) {
+        setHarError('未找到微店相关数据，请确认抓包时访问过微店小程序')
         setHarLoading(false)
         return
       }
@@ -58,20 +56,25 @@ function CookieGuide({ onClose, onImport }) {
   const handleHARConfirm = () => {
     if (!harResult) return
     onImport({
-      cookie: harResult.cookies,
+      cookie: harResult.cookies || null,
       accountName: harResult.accountName || 'HAR导入',
       products: harResult.products
     })
   }
 
   const handleManualSubmit = () => {
-    const trimmed = cookieText.trim()
+    const trimmed = contextText.trim()
     if (!trimmed) return
-    if (!trimmed.includes('=')) {
-      alert('Cookie 格式不对，请确保复制了完整的 Cookie 行')
+    const parsed = parseAccountContext(trimmed)
+    if (!parsed) {
+      alert('Context 格式不对。\n\n请确认：\n1. 在 Fiddler 中选中 thor.weidian.com 的 POST 请求\n2. 右侧 Inspectors → WebForms\n3. 找到 context 那一行，复制完整的值\n4. 值应该是以 %7B 开头或 { 开头的 JSON')
       return
     }
-    onImport({ cookie: trimmed, accountName: null, products: [] })
+    onImport({
+      contextData: parsed,
+      accountName: null,
+      products: []
+    })
   }
 
   // Choose mode screen
@@ -81,25 +84,25 @@ function CookieGuide({ onClose, onImport }) {
         onClick={onClose}>
         <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
-          <h3 className="text-base font-medium text-white mb-1">获取微店 Cookie</h3>
-          <p className="text-xs text-gray-500 mb-4">只需操作一次，之后自动保鲜</p>
+          <h3 className="text-base font-medium text-white mb-1">获取微店 Token</h3>
+          <p className="text-xs text-gray-500 mb-4">用 Fiddler 抓微信PC版微店小程序的包</p>
 
           <button onClick={() => setMode('manual')}
             className="w-full mb-3 p-4 bg-purple-600/10 border border-purple-500/30 rounded-xl text-left active:scale-[0.98] transition-transform">
-            <div className="text-sm font-medium text-purple-300 mb-1">直接粘贴 Cookie（推荐）</div>
-            <div className="text-xs text-gray-500">Stream 抓包 → 点开请求详情 → 拷贝 Cookie 行 → 粘贴到这里</div>
+            <div className="text-sm font-medium text-purple-300 mb-1">从 Fiddler 复制 Context（推荐）</div>
+            <div className="text-xs text-gray-500">Fiddler 抓包 → 找 thor.weidian.com POST 请求 → 复制 context 值 → 粘贴</div>
           </button>
 
           <button onClick={() => setMode('har')}
             className="w-full mb-3 p-4 bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl text-left active:scale-[0.98] transition-transform">
             <div className="text-sm font-medium text-gray-300 mb-1">HAR 文件导入</div>
-            <div className="text-xs text-gray-600">Stream/Charles/Fiddler 导出 HAR → 自动解析 Cookie + 商品</div>
+            <div className="text-xs text-gray-600">Fiddler/Charles/Stream 导出 HAR → 自动解析 Cookie + 商品</div>
           </button>
 
           <button onClick={() => setMode('desktop')}
             className="w-full p-4 bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl text-left active:scale-[0.98] transition-transform">
-            <div className="text-sm font-medium text-gray-300 mb-1">电脑端抓包（mitmproxy）</div>
-            <div className="text-xs text-gray-600">Windows 装 mitmproxy → iPhone 设代理 → 电脑上看 Cookie</div>
+            <div className="text-sm font-medium text-gray-300 mb-1">Fiddler 配置教程</div>
+            <div className="text-xs text-gray-600">Fiddler Classic 安装和 HTTPS 解密设置步骤</div>
           </button>
 
           <button onClick={onClose}
@@ -127,13 +130,12 @@ function CookieGuide({ onClose, onImport }) {
                 <h3 className="text-base font-medium text-white">导入 HAR</h3>
               </div>
 
-              {/* Stream instructions */}
               <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-4 mb-4">
                 <p className="text-xs text-gray-400 leading-relaxed">
                   <span className="text-purple-400 font-medium">抓包工具导出 HAR：</span><br />
+                  <b>Fiddler Classic:</b> File → Export Sessions → All Sessions → 选 HAR JSON<br />
                   <b>Stream (iPhone):</b> 抓包历史 → 「...」→ 导出 → HAR → 拷贝<br />
                   <b>Charles:</b> File → Export → HAR<br />
-                  <b>Fiddler:</b> File → Export Sessions → HAR<br />
                   <b>mitmproxy:</b> mitmweb 界面 → File → Save → HAR<br />
                   <b>Chrome DevTools:</b> Network → 右键 → Save all as HAR
                 </p>
@@ -178,7 +180,7 @@ function CookieGuide({ onClose, onImport }) {
                     <input type="file" accept=".har,.json,.txt,text/*" onChange={handleHARFile} className="hidden" />
                     <span className="block w-full text-center py-3 bg-[#0f0f1a] border border-dashed border-[#3a3a5a] rounded-xl cursor-pointer active:scale-[0.98] transition-transform">
                       <span className="text-sm text-gray-400">从文件选择</span>
-                      <span className="text-[10px] text-gray-600 block mt-0.5">先存到「文件」App，再从这里选</span>
+                      <span className="text-[10px] text-gray-600 block mt-0.5">支持 .har .json .txt 格式</span>
                     </span>
                   </label>
                 </div>
@@ -219,7 +221,7 @@ function CookieGuide({ onClose, onImport }) {
     )
   }
 
-  // Desktop proxy mode — mitmproxy guide
+  // Fiddler setup guide
   if (mode === 'desktop') {
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
@@ -229,18 +231,17 @@ function CookieGuide({ onClose, onImport }) {
           <div className="flex items-center gap-3 mb-4">
             <button onClick={() => setMode(null)}
               className="text-gray-500 hover:text-white text-lg leading-none shrink-0">&larr;</button>
-            <h3 className="text-base font-medium text-white">电脑端抓包</h3>
+            <h3 className="text-base font-medium text-white">Fiddler 配置教程</h3>
           </div>
 
           <div className="space-y-3 mb-4">
             {[
-              { title: '安装 mitmproxy', desc: '浏览器打开 mitmproxy.org → 下载 Windows 版 → 安装' },
-              { title: '启动 mitmweb', desc: 'Win+R 输入 cmd 回车 → 输入 mitmweb 回车 → 浏览器自动打开 http://localhost:8081' },
-              { title: 'iPhone 设代理', desc: 'iPhone 设置 → WiFi → 点当前网络右边的 ⓘ → HTTP 代理 → 手动 → 服务器填电脑IP，端口 8080' },
-              { title: '安装证书', desc: 'iPhone Safari 打开 mitm.it → 点 Apple 图标下载证书 → 设置 → 通用 → VPN与设备管理 → 安装' },
-              { title: '信任证书', desc: '设置 → 通用 → 关于本机 → 证书信任设置 → 开启 mitmproxy 证书' },
-              { title: '抓取 Cookie', desc: 'iPhone 上打开微店APP逛逛 → 电脑 mitmweb 界面找 weidian.com 的请求 → 点 Request → 复制 Cookie 那一行' },
-              { title: '粘贴 Cookie', desc: '回到本页面，点下面的「直接粘贴 Cookie」粘贴即可' },
+              { title: '安装 Fiddler Classic', desc: 'Win+R 输入 cmd → 输入 winget install Telerik.Fiddler.Classic → 回车。已装好可跳过。' },
+              { title: '开启 HTTPS 解密', desc: '打开 Fiddler → Tools → Options → HTTPS → 勾选 "Decrypt HTTPS traffic" → 点击 Yes 信任证书' },
+              { title: '打开微信PC版微店小程序', desc: '微信PC版 → 底部「小程序」→ 搜索「微店」→ 打开微店小程序 → 随便逛几个商品页面' },
+              { title: '找到 Context', desc: '回到 Fiddler → 左侧找到 thor.weidian.com 的 POST 请求 → 点击 → 右侧 Inspectors → WebForms' },
+              { title: '复制 Context 值', desc: '在 WebForms 中找 context 那一行 → 右键 → Copy Value → 这就是认证令牌' },
+              { title: '粘贴 Context', desc: '回到本页面，点下面的「从 Fiddler 复制 Context」→ 粘贴到输入框 → 确认' },
             ].map((s, i) => (
               <div key={i} className="flex gap-3">
                 <span className="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
@@ -254,9 +255,13 @@ function CookieGuide({ onClose, onImport }) {
             ))}
           </div>
 
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mb-4 text-xs text-green-400">
+            微信PC版小程序不走 SSL Pinning，Fiddler 可以直接解密。这是目前最可靠的方式。
+          </div>
+
           <button onClick={() => setMode('manual')}
             className="w-full mb-2 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl">
-            去粘贴 Cookie
+            去粘贴 Context
           </button>
           <button onClick={onClose}
             className="w-full py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
@@ -267,7 +272,7 @@ function CookieGuide({ onClose, onImport }) {
     )
   }
 
-  // Manual mode — all steps visible, scrollable
+  // Manual mode — paste context from Fiddler
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
       onClick={onClose}>
@@ -276,20 +281,19 @@ function CookieGuide({ onClose, onImport }) {
         <div className="flex items-center gap-3 mb-4">
           <button onClick={() => setMode(null)}
             className="text-gray-500 hover:text-white text-lg leading-none shrink-0">&larr;</button>
-          <h3 className="text-base font-medium text-white">直接粘贴 Cookie</h3>
+          <h3 className="text-base font-medium text-white">从 Fiddler 复制 Context</h3>
         </div>
 
         <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mb-4 text-xs text-green-400">
-          这是最可靠的方式。HAR 导入可能因微店 SSL 证书绑定而失败，但手动复制 Cookie 总是能用。
+          微信PC版微店小程序不走证书绑定，Fiddler 可直接抓包。一次配置，持续使用。
         </div>
 
-        {/* All steps on one scrollable view */}
         <div className="space-y-3 mb-4">
           {[
-            { icon: '1', title: 'iPhone 装 Stream', desc: 'App Store 搜索 "Stream" 下载。打开后按提示安装 HTTPS 证书并信任。' },
-            { icon: '2', title: '开始抓包', desc: 'Stream 点「开始抓包」→ 切到微店 APP 随便逛几个页面 → 回到 Stream 点「停止抓包」' },
-            { icon: '3', title: '复制 Cookie', desc: '点「抓包历史」→ 找一条域名含 weidian.com 的请求 → 点它 → 点「请求」标签 → 找到 Cookie 那一行 → 长按 → 全选 → 拷贝' },
-            { icon: '4', title: '粘贴到这里', desc: '在电脑上打开此页面，把复制的 Cookie 发到电脑（微信/QQ 发送），Ctrl+V 粘贴到下方输入框' },
+            { icon: '1', title: '启动抓包', desc: '打开 Fiddler Classic，确认左下角是 "Capturing" 状态。打开微信PC版 → 微店小程序 → 随便浏览几个商品。' },
+            { icon: '2', title: '定位请求', desc: '回到 Fiddler，左侧列表找到 Host 为 thor.weidian.com 的 POST 请求（通常是深蓝色）。点一下选中。' },
+            { icon: '3', title: '复制 Context', desc: '右侧点 Inspectors 标签 → WebForms 子标签 → 在列表里找到 context 那一行 → 双击 Value 那一列 → Ctrl+C 复制。' },
+            { icon: '4', title: '粘贴到这里', desc: 'Ctrl+V 粘贴到下方输入框，点击确认。整个 context 值应该以 %7B 或 { 开头。' },
           ].map((s, i) => (
             <div key={i} className="flex gap-3">
               <span className="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
@@ -306,15 +310,15 @@ function CookieGuide({ onClose, onImport }) {
         {/* Paste area */}
         <div className="space-y-2 sticky bottom-0 bg-[#1a1a2e] pt-2">
           <textarea
-            value={cookieText}
-            onChange={e => setCookieText(e.target.value)}
-            placeholder="把 Cookie 粘贴到这里 (Ctrl+V)..."
+            value={contextText}
+            onChange={e => setContextText(e.target.value)}
+            placeholder="把 context 值粘贴到这里 (Ctrl+V)..."
             className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono resize-none h-20 focus:outline-none focus:border-purple-500"
           />
           <button onClick={handleManualSubmit}
-            disabled={!cookieText.trim()}
+            disabled={!contextText.trim()}
             className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl disabled:opacity-40 active:scale-95 transition-transform">
-            确认并添加账号
+            解析并添加账号
           </button>
         </div>
 
@@ -333,7 +337,7 @@ export default function Accounts() {
   const [showForm, setShowForm] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({ name: '', cookie: '', userAgent: '', proxyNote: '', enabled: true })
+  const [form, setForm] = useState({ name: '', context: '', userAgent: '', proxyNote: '', enabled: true })
 
   const loadData = useCallback(async () => {
     const accts = await getAccounts()
@@ -349,14 +353,43 @@ export default function Accounts() {
   useEffect(() => { loadData() }, [loadData])
 
   const resetForm = () => {
-    setForm({ name: '', cookie: '', userAgent: '', proxyNote: '', enabled: true })
+    setForm({ name: '', context: '', userAgent: '', proxyNote: '', enabled: true })
     setEditing(null)
     setShowForm(false)
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    const data = { ...form, enabled: form.enabled ? 1 : 0 }
+
+    let contextData = {}
+    if (form.context.trim()) {
+      const parsed = parseAccountContext(form.context)
+      if (!parsed) {
+        alert('Context 格式不对。\n\n请确认从 Fiddler 复制的完整 context 参数值。\n值应该是以 { 或 %7B 开头的 JSON 数据。')
+        return
+      }
+      contextData = parsed
+    }
+
+    const data = {
+      name: form.name,
+      contextRaw: contextData.contextRaw || form.context.trim(),
+      contextEncoded: contextData.contextEncoded || '',
+      token: contextData.token || '',
+      refreshToken: contextData.refreshToken || '',
+      duid: contextData.duid || '',
+      visitorId: contextData.visitorId || '',
+      sid: contextData.sid || '',
+      wduserID: contextData.wduserID || '',
+      appid: contextData.appid || 'wxbuyer',
+      wxappid: contextData.wxappid || '',
+      platform: contextData.platform || 'windows',
+      userType: contextData.userType ?? 0,
+      userAgent: form.userAgent || '',
+      proxyNote: form.proxyNote || '',
+      enabled: form.enabled ? 1 : 0
+    }
+
     if (editing) {
       await updateAccount(editing, data)
     } else {
@@ -369,7 +402,7 @@ export default function Accounts() {
   const handleEdit = (a) => {
     setForm({
       name: a.name,
-      cookie: a.cookie || '',
+      context: a.contextRaw || a.cookie || '',
       userAgent: a.userAgent || '',
       proxyNote: a.proxyNote || '',
       enabled: a.enabled === 1
@@ -387,14 +420,32 @@ export default function Accounts() {
   const handleImport = async (data) => {
     setShowGuide(false)
 
-    // Create account
-    const accountId = await addAccount({
+    const acctData = {
       name: data.accountName || '微店账号',
-      cookie: data.cookie,
       enabled: 1
-    })
+    }
 
-    // Auto-add products
+    if (data.contextData) {
+      Object.assign(acctData, {
+        contextRaw: data.contextData.contextRaw,
+        contextEncoded: data.contextData.contextEncoded,
+        token: data.contextData.token,
+        refreshToken: data.contextData.refreshToken,
+        duid: data.contextData.duid,
+        visitorId: data.contextData.visitorId,
+        sid: data.contextData.sid,
+        wduserID: data.contextData.wduserID,
+        appid: data.contextData.appid,
+        wxappid: data.contextData.wxappid,
+        platform: data.contextData.platform,
+        userType: data.contextData.userType
+      })
+    } else if (data.cookie) {
+      acctData.cookie = data.cookie
+    }
+
+    const accountId = await addAccount(acctData)
+
     let addedCount = 0
     if (data.products && data.products.length > 0) {
       for (const p of data.products) {
@@ -410,13 +461,18 @@ export default function Accounts() {
       }
     }
 
-    alert(`导入完成！\n账号: ${data.accountName || '微店账号'}\nCookie: 已配置\n商品: ${addedCount} 个`)
+    const tokenInfo = data.contextData?.token ? `Token: 已配置` : ''
+    alert(`导入完成！\n账号: ${data.accountName || '微店账号'}\n${tokenInfo}\n商品: ${addedCount} 个`)
 
     loadData()
   }
 
+  const hasToken = (acct) => {
+    return !!(acct.token || acct.contextRaw)
+  }
+
   const getStatus = (acct) => {
-    if (!acct.cookie) return 'unknown'
+    if (!hasToken(acct)) return 'unknown'
     if (acct.cookieStatus === 'expired') return 'expired'
     if (acct.cookieStatus === 'healthy') return 'healthy'
     return 'unknown'
@@ -433,7 +489,7 @@ export default function Accounts() {
             onClick={() => setShowGuide(true)}
             className="text-xs px-3 py-1.5 border border-purple-500/30 text-purple-400 rounded-lg active:scale-95 transition-transform"
           >
-            获取Cookie教程
+            获取Token教程
           </button>
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
@@ -448,7 +504,7 @@ export default function Accounts() {
         <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl p-8 text-center">
           <p className="text-gray-500 text-sm">还没有添加账号</p>
           <p className="text-gray-600 text-xs mt-1">
-            点「获取Cookie教程」按步骤获取，或点「+ 添加」手动粘贴
+            点「获取Token教程」按步骤用 Fiddler 抓取，或点「+ 添加」手动粘贴 Context
           </p>
         </div>
       ) : (
@@ -483,11 +539,17 @@ export default function Accounts() {
                     <span className="text-gray-400">{productCounts[a.id] || 0} 个</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Cookie: </span>
-                    <span className={a.cookie ? 'text-green-400' : 'text-red-400'}>
-                      {a.cookie ? '已配置' : '未配置'}
+                    <span className="text-gray-600">Token: </span>
+                    <span className={hasToken(a) ? 'text-green-400' : 'text-red-400'}>
+                      {hasToken(a) ? '已配置' : '未配置'}
                     </span>
                   </div>
+                  {a.duid && (
+                    <div className="col-span-2">
+                      <span className="text-gray-600">用户ID: </span>
+                      <span className="text-gray-400">{a.duid}</span>
+                    </div>
+                  )}
                   {a.userAgent && (
                     <div className="col-span-2">
                       <span className="text-gray-600">自定义UA: </span>
@@ -515,9 +577,9 @@ export default function Accounts() {
         </div>
       )}
 
-      {/* Cookie Guide modal */}
+      {/* Context Guide modal */}
       {showGuide && (
-        <CookieGuide
+        <ContextGuide
           onImport={handleImport}
           onClose={() => setShowGuide(false)}
         />
@@ -540,22 +602,22 @@ export default function Accounts() {
                   placeholder="如：主号" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Cookie *</label>
-                <textarea required value={form.cookie} onChange={e => setForm({...form, cookie: e.target.value})}
+                <label className="text-xs text-gray-500 block mb-1">Context *</label>
+                <textarea required value={form.context} onChange={e => setForm({...form, context: e.target.value})}
                   className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-purple-500 resize-none h-24 font-mono"
-                  placeholder="用 Stream 抓包获取的 Cookie 字符串" />
+                  placeholder="从 Fiddler 复制的 context 参数值（以 { 或 %7B 开头）" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">自定义 UA（可选）</label>
                 <input value={form.userAgent} onChange={e => setForm({...form, userAgent: e.target.value})}
                   className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-purple-500"
-                  placeholder="留空则使用随机UA池" />
+                  placeholder="留空则使用微信PC小程序UA" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">代理备注（可选）</label>
                 <input value={form.proxyNote} onChange={e => setForm({...form, proxyNote: e.target.value})}
                   className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500"
-                  placeholder="如：已开 Surge / 小火箭" />
+                  placeholder="如：已配置系统代理 / VPN" />
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={form.enabled} onChange={e => setForm({...form, enabled: e.target.checked})}

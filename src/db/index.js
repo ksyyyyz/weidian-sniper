@@ -41,6 +41,77 @@ export async function deleteAccount(id) {
   await db.products.where('accountId').equals(Number(id)).delete()
 }
 
+/**
+ * Parse a raw context string from Fiddler.
+ * Accepts URL-encoded or plain JSON.
+ */
+export function parseAccountContext(raw) {
+  if (!raw || !raw.trim()) return null
+  let str = raw.trim()
+  // If it's the full POST body (param=...&context=...), extract context part
+  if (str.includes('&context=')) {
+    const m = str.match(/[&?]context=([^&]+)/)
+    if (m) str = m[1]
+  } else if (str.startsWith('param=')) {
+    // Full body, extract context
+    const m = str.match(/context=([^&]+)/)
+    if (m) str = m[1]
+  }
+  // URL-decode if needed
+  if (str.includes('%')) {
+    try { str = decodeURIComponent(str) } catch {}
+  }
+  // Parse JSON
+  try {
+    const ctx = JSON.parse(str)
+    return {
+      contextRaw: str,
+      contextEncoded: encodeURIComponent(str),
+      token: ctx.token || '',
+      refreshToken: ctx.refreshToken || '',
+      duid: ctx.duid || ctx.uid || ctx.userID || '',
+      visitorId: ctx.visitor_id || ctx.anonymousId || '',
+      sid: ctx.sid || '',
+      wduserID: ctx.wduserID || '',
+      appid: ctx.appid || 'wxbuyer',
+      wxappid: ctx.wxappid || '',
+      platform: ctx.platform || 'windows',
+      userType: ctx.userType ?? 0
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build the context JSON string from stored account data.
+ */
+export function buildContext(account) {
+  if (account.contextEncoded) {
+    return account.contextEncoded
+  }
+  if (account.contextRaw) {
+    return encodeURIComponent(account.contextRaw)
+  }
+  // Fallback: build from individual fields
+  const ctx = {
+    appid: account.appid || 'wxbuyer',
+    platform: 'windows',
+    anonymousId: account.visitorId || '',
+    visitor_id: account.visitorId || '',
+    token: account.token || '',
+    duid: account.duid || '',
+    sid: account.sid || '',
+    uid: account.duid || '',
+    refreshToken: account.refreshToken || '',
+    userType: account.userType ?? 0,
+    userID: account.duid || '',
+    wduserID: account.wduserID || '',
+    wxappid: account.wxappid || ''
+  }
+  return encodeURIComponent(JSON.stringify(ctx))
+}
+
 // Products
 export async function getProducts(accountId) {
   let q = db.products.orderBy('createdAt').reverse()

@@ -92,18 +92,18 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Account section — Cookie config */}
-      <Section title="Cookie 配置">
+      {/* Account section — Context config */}
+      <Section title="Token 配置">
         <p className="text-xs text-gray-600 mb-2">
-          从微店抓取 Cookie 后粘贴到这里。也可去「账号」页为每个账号单独配置。
+          从 Fiddler 抓取微店 Context 后粘贴到这里（备用）。去「账号」页为每个账号单独配置会更方便。
         </p>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">全局 Cookie（备用）</label>
+          <label className="text-xs text-gray-500 block mb-1">全局 Context（备用）</label>
           <textarea
-            value={settings.cookie || ''}
-            onChange={e => update('cookie', e.target.value)}
+            value={settings.context || ''}
+            onChange={e => update('context', e.target.value)}
             className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-purple-500 resize-none h-20 font-mono"
-            placeholder="粘贴Cookie..."
+            placeholder="从 Fiddler 复制的 context 值..."
           />
         </div>
       </Section>

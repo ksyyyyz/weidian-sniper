@@ -1,18 +1,15 @@
 import { buildHeaders, getRequestDelay, detectRisk, isInCooldown, isBanned } from './anti-ban'
 import { sleep } from '../utils/delay'
 import { info, error, success } from '../utils/logger'
-import { getAccount } from '../db'
+import { getAccount, buildContext } from '../db'
 
 /**
  * Core fetch wrapper with anti-ban injection.
  *
- * Features:
- * - Automatic UA / header rotation
- * - Normal-distribution random delay
- * - Structured logging (before + after)
- * - Risk detection (429, 403, keywords)
- * - Cookie injection per account
- * - Cooldown / ban gating
+ * Two auth modes:
+ * - Token mode (Weidian API): POST body wrapped as param={json}&context={auth}
+ *   Detected automatically when account has context/token data.
+ * - Regular mode: standard fetch with optional Cookie header.
  */
 export async function apiFetch(url, options = {}) {
   const {
@@ -43,26 +40,44 @@ export async function apiFetch(url, options = {}) {
     await sleep(delay)
   }
 
-  // Build headers
-  const headers = await buildHeaders(extraHeaders)
-
-  // Inject account cookie
+  // Load account and determine auth mode
+  let account = null
+  let useTokenAuth = false
   if (accountId) {
-    const acct = await getAccount(accountId)
-    if (acct?.cookie) {
-      headers['Cookie'] = acct.cookie
+    account = await getAccount(accountId)
+    useTokenAuth = !!(account && (account.contextRaw || account.contextEncoded || account.token))
+  }
+
+  // Build headers
+  const headers = await buildHeaders(extraHeaders, { isWeidianAPI: useTokenAuth })
+
+  // Build body based on auth mode
+  let reqBody = null
+  if (useTokenAuth && method === 'POST' && body) {
+    const contextStr = buildContext(account)
+    const paramStr = typeof body === 'object'
+      ? encodeURIComponent(JSON.stringify(body))
+      : body
+    reqBody = `param=${paramStr}&context=${contextStr}`
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+  } else if (useTokenAuth && method === 'GET' && body) {
+    // GET with token auth: append context as query param
+    const contextStr = buildContext(account)
+    const sep = url.includes('?') ? '&' : '?'
+    url = `${url}${sep}context=${contextStr}`
+    reqBody = null
+  } else if (body && typeof body === 'object') {
+    if (!headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json'
     }
+    reqBody = JSON.stringify(body)
+  } else {
+    reqBody = body || null
   }
 
   if (referer) {
     headers['Referer'] = referer
   }
-
-  if (body && typeof body === 'object' && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json'
-  }
-
-  const reqBody = body && typeof body === 'object' ? JSON.stringify(body) : body
 
   // Log request
   const startTime = performance.now()
@@ -85,8 +100,7 @@ export async function apiFetch(url, options = {}) {
       method,
       headers,
       body: reqBody,
-      signal: controller.signal,
-      credentials: 'include'
+      signal: controller.signal
     })
   } catch (err) {
     clearTimeout(timeoutId)
@@ -167,6 +181,7 @@ export async function apiGet(url, options = {}) {
 
 /**
  * Quick POST helper with auto JSON parse.
+ * When account has token auth, body is auto-wrapped as param+context.
  */
 export async function apiPost(url, body, options = {}) {
   const { response, body: raw } = await apiFetch(url, { ...options, method: 'POST', body })

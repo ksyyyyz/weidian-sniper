@@ -41,7 +41,15 @@ const UA_POOL = [
   'Mozilla/5.0 (Linux; Android 14; CPH2659) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.127 Mobile Safari/537.36',
 ]
 
+// WeChat PC mini-program UAs (for Weidian API via Fiddler-captured context)
+const WECHAT_PC_UAS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) MiniProgramEnv/Windows WindowsWechat(0x63090a13)',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) MiniProgramEnv/Windows WindowsWechat(0x63090a13)',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) MiniProgramEnv/Windows',
+]
+
 let index = 0
+let wechatIndex = 0
 
 export function randomUA() {
   // Fisher-Yates-ish random with low consecutive-repeat probability
@@ -49,6 +57,13 @@ export function randomUA() {
   if (i === index) i = (i + 1) % UA_POOL.length
   index = i
   return UA_POOL[i]
+}
+
+export function randomWechatUA() {
+  let i = Math.floor(Math.random() * WECHAT_PC_UAS.length)
+  if (i === wechatIndex) i = (i + 1) % WECHAT_PC_UAS.length
+  wechatIndex = i
+  return WECHAT_PC_UAS[i]
 }
 
 export function randomDeviceId() {

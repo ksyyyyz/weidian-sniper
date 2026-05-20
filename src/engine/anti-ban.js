@@ -1,4 +1,4 @@
-import { randomUA, randomDeviceId, randomIP } from '../utils/ua-pool'
+import { randomUA, randomWechatUA, randomDeviceId, randomIP } from '../utils/ua-pool'
 import { humanDelay, sleep } from '../utils/delay'
 import { warn } from '../utils/logger'
 import { getSetting } from '../db'
@@ -14,10 +14,22 @@ function cooldownKey(accountId, productId) {
 
 /**
  * L1 — Build a disguised request headers set.
+ * @param {Object} baseHeaders — extra headers to merge
+ * @param {Object} options — { isWeidianAPI: boolean }
  */
-export async function buildHeaders(baseHeaders = {}) {
-  const ua = randomUA()
-  const deviceId = randomDeviceId()
+export async function buildHeaders(baseHeaders = {}, options = {}) {
+  const { isWeidianAPI = false } = options
+
+  let ua
+  if (isWeidianAPI) {
+    ua = randomWechatUA()
+  } else if (baseHeaders['User-Agent']) {
+    ua = baseHeaders['User-Agent']
+    delete baseHeaders['User-Agent']
+  } else {
+    ua = randomUA()
+  }
+
   const headers = {
     'User-Agent': ua,
     'Accept': 'application/json, text/plain, */*',
@@ -25,13 +37,21 @@ export async function buildHeaders(baseHeaders = {}) {
     'Accept-Encoding': 'gzip, deflate, br',
     'Cache-Control': 'no-cache',
     'Pragma': 'no-cache',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
-    'Sec-Fetch-Site': 'same-origin',
-    'X-Device-Id': deviceId,
-    'X-Forwarded-For': randomIP(),
     ...baseHeaders
   }
+
+  if (isWeidianAPI) {
+    headers['Sec-Fetch-Dest'] = 'empty'
+    headers['Sec-Fetch-Mode'] = 'cors'
+    headers['Sec-Fetch-Site'] = 'cross-site'
+  } else {
+    headers['X-Device-Id'] = randomDeviceId()
+    headers['X-Forwarded-For'] = randomIP()
+    headers['Sec-Fetch-Dest'] = 'empty'
+    headers['Sec-Fetch-Mode'] = 'cors'
+    headers['Sec-Fetch-Site'] = 'same-origin'
+  }
+
   return headers
 }
 
@@ -48,7 +68,6 @@ function randomAcceptLanguage() {
 
 /**
  * L2 — Get randomized delay for a request cycle.
- * Configurable base interval from settings.
  */
 export async function getRequestDelay() {
   const interval = await getSetting('interval') || 200
@@ -120,7 +139,6 @@ export function clearBan(accountId) {
 
 /**
  * L4 — Check if we're in warmup window.
- * Returns true if within warmupSeconds before the target time.
  */
 export async function isWarmupWindow(targetTime) {
   if (!targetTime) return false
@@ -136,9 +154,6 @@ export async function isWarmupWindow(targetTime) {
  */
 export async function getMonitorInterval() {
   const base = await getSetting('interval') || 200
-  const warmup = await getSetting('warmupSeconds') || 3
-  const offset = await getSetting('timeOffset') || 0
-  // During warmup window: use faster interval (50ms or base/4, whichever is lower)
   return Math.min(50, Math.round(Number(base) / 4))
 }
 

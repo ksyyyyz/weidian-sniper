@@ -1,5 +1,5 @@
-import { getEnabledProducts, getSetting } from '../db'
-import { apiGet } from './fetcher'
+import { getEnabledProducts, getSetting, getAccount } from '../db'
+import { apiGet, apiPost } from './fetcher'
 import { isInCooldown, isBanned, isWarmupWindow, getMonitorInterval, coolDown, resetBackoff } from './anti-ban'
 import { executeSnipe } from './sniper'
 import { getCorrectedTime, getMsUntilTarget } from './time-sync'
@@ -100,18 +100,36 @@ export async function startMonitoring() {
 }
 
 async function pollProduct(product, isWarmup) {
-  // Parse product URL to determine API endpoint
   const productUrl = product.url
   if (!productUrl) return
 
   try {
     const startTime = performance.now()
-    const { status, data } = await apiGet(productUrl, {
-      accountId: product.accountId,
-      productId: product.id,
-      skipDelay: isWarmup, // Skip delay in warmup to poll faster
-      timeout: isWarmup ? 5000 : 10000
-    })
+
+    // Determine if account uses token auth → use POST to Weidian API
+    const account = product.accountId ? await getAccount(product.accountId) : null
+    const useTokenAuth = account && (account.contextRaw || account.token)
+
+    let result
+    if (useTokenAuth) {
+      const detailApi = await getSetting('snipe_detail_api') || 'https://thor.weidian.com/detail/getItemDetail/1.0'
+      const params = { itemId: String(product.sku || ''), shopId: '' }
+      result = await apiPost(detailApi, params, {
+        accountId: product.accountId,
+        productId: product.id,
+        skipDelay: isWarmup,
+        timeout: isWarmup ? 5000 : 10000
+      })
+    } else {
+      result = await apiGet(productUrl, {
+        accountId: product.accountId,
+        productId: product.id,
+        skipDelay: isWarmup,
+        timeout: isWarmup ? 5000 : 10000
+      })
+    }
+
+    const { status, data } = result
 
     const duration = Math.round(performance.now() - startTime)
     const prevState = lastStates[product.id]
