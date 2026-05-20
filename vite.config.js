@@ -2,6 +2,11 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { HttpsProxyAgent } from 'https-proxy-agent'
+
+// Route API calls through Fiddler's MITM proxy to bypass Weidian TLS fingerprinting.
+// Fiddler must be running with HTTPS decryption enabled on port 8888 before starting dev server.
+const fiddlerAgent = new HttpsProxyAgent('http://127.0.0.1:8888', { rejectUnauthorized: false })
 
 export default defineConfig({
   plugins: [
@@ -45,6 +50,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/thor/, ''),
         secure: false,
+        agent: fiddlerAgent,
         headers: {
           referer: 'https://servicewechat.com/'
         }
@@ -53,7 +59,8 @@ export default defineConfig({
         target: 'https://logtake.weidian.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/logtake/, ''),
-        secure: false
+        secure: false,
+        agent: fiddlerAgent
       }
     }
   }
