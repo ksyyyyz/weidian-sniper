@@ -24,11 +24,10 @@ export async function apiFetch(url, options = {}) {
     referer = null
   } = options
 
-  // In dev mode, rewrite Weidian API URLs through Vite proxy to bypass CORS
-  if (import.meta.env.DEV) {
-    url = url.replace(/^https?:\/\/thor\.weidian\.com/, '/api/thor')
-      .replace(/^https?:\/\/logtake\.weidian\.com/, '/api/logtake')
-  }
+  // Rewrite Weidian API URLs through proxy to bypass CORS
+  // Vite dev server proxy or Vercel rewrites handle forwarding
+  url = url.replace(/^https?:\/\/thor\.weidian\.com/, '/api/thor')
+    .replace(/^https?:\/\/logtake\.weidian\.com/, '/api/logtake')
 
   // Gate: banned account
   if (accountId && isBanned(accountId)) {

@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/thor/:path*",
+      "destination": "https://thor.weidian.com/:path*"
+    },
+    {
+      "source": "/api/logtake/:path*",
+      "destination": "https://logtake.weidian.com/:path*"
+    }
+  ]
+}
