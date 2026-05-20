@@ -110,16 +110,41 @@ export default function Settings() {
 
       {/* Target time */}
       <Section title="开抢时间">
-        <p className="text-[10px] text-gray-500 mb-2">设置秒杀活动的预计开始时间，到点前会自动进入预热模式</p>
-        <input
-          type="datetime-local"
-          value={settings.targetTime || ''}
-          onChange={e => update('targetTime', e.target.value)}
-          className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 mb-2"
-        />
-        <p className="text-[10px] text-gray-600 mb-2">
-          当前: {settings.targetTime ? new Date(settings.targetTime).toLocaleString('zh-CN') : '未设置'}
+        <p className="text-[10px] text-gray-500 mb-3">设置秒杀活动的预计开始时间，到点前会自动进入预热模式</p>
+
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div>
+            <label className="text-[10px] text-gray-600 block mb-1">日期</label>
+            <input
+              type="text"
+              value={settings.targetTime ? settings.targetTime.slice(0, 10) : ''}
+              onChange={e => {
+                const time = settings.targetTime ? settings.targetTime.slice(11, 16) : '20:00'
+                update('targetTime', `${e.target.value}T${time}`)
+              }}
+              className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 text-center"
+              placeholder="2026-05-20"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-600 block mb-1">时间</label>
+            <input
+              type="text"
+              value={settings.targetTime ? settings.targetTime.slice(11, 16) : ''}
+              onChange={e => {
+                const date = settings.targetTime ? settings.targetTime.slice(0, 10) : new Date().toISOString().slice(0, 10)
+                update('targetTime', `${date}T${e.target.value}`)
+              }}
+              className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 text-center"
+              placeholder="20:00"
+            />
+          </div>
+        </div>
+
+        <p className={`text-xs mb-3 ${settings.targetTime ? 'text-green-400' : 'text-gray-600'}`}>
+          {settings.targetTime ? `已设置: ${new Date(settings.targetTime).toLocaleString('zh-CN')}` : '未设置'}
         </p>
+
         {/* Quick presets */}
         <div className="flex gap-1.5 flex-wrap">
           {[
