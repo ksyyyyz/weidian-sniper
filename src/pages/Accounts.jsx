@@ -500,11 +500,11 @@ function TemplateImporter({ accountId, onClose, onImported }) {
                     <span className="text-xs font-medium text-white">{s.name}</span>
                   </div>
                   <p className="text-[10px] text-gray-500 truncate">{s.url}</p>
-                  {Object.keys(s.replacements).length > 0 && (
+                  {(s.replacements?.length || 0) > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
-                      {Object.entries(s.replacements).map(([k, v]) => (
-                        <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">
-                          {k} → {v}
+                      {s.replacements.map((r, i) => (
+                        <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">
+                          {r.path} → {r.placeholder}
                         </span>
                       ))}
                     </div>

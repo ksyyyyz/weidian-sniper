@@ -285,6 +285,58 @@ function formatCookieString(cookieMap) {
   return parts.join('; ')
 }
 
+// Recursively find fields that should be replaced per product
+function detectReplaceableFields(obj, prefix, results) {
+  if (!obj || typeof obj !== 'object') return
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      detectReplaceableFields(obj[i], prefix + '[' + i + ']', results)
+    }
+    return
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    const fullKey = prefix ? prefix + '.' + key : key
+    const lk = key.toLowerCase()
+    if (/itemid|vitemid|productid|item_id/.test(lk) && typeof value === 'string') {
+      results.push({ path: fullKey, placeholder: '{{itemId}}' })
+    } else if (/skuid|item_sku_id|sku_id/.test(lk) && typeof value === 'number') {
+      results.push({ path: fullKey, placeholder: '{{skuId}}' })
+    } else if (/shopid|vshopid|shop_id/.test(lk) && typeof value === 'string') {
+      results.push({ path: fullKey, placeholder: '{{shopId}}' })
+    } else if (typeof value === 'object' && value !== null) {
+      detectReplaceableFields(value, fullKey, results)
+    }
+  }
+}
+
+// Deep clone an object, replacing values for matched field names with placeholders
+function deepCloneWithPlaceholders(obj, replacements) {
+  if (!obj || typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) {
+    return obj.map(v => deepCloneWithPlaceholders(v, replacements))
+  }
+  const result = {}
+  for (const [key, value] of Object.entries(obj)) {
+    const lk = key.toLowerCase()
+    let matched = false
+    // Check if this key matches a replacement pattern
+    if (/itemid|vitemid|productid|item_id/.test(lk) && typeof value === 'string') {
+      result[key] = '{{itemId}}'
+      matched = true
+    } else if (/skuid|item_sku_id|sku_id/.test(lk) && typeof value === 'number') {
+      result[key] = '{{skuId}}'
+      matched = true
+    } else if (/shopid|vshopid|shop_id/.test(lk) && typeof value === 'string') {
+      result[key] = '{{shopId}}'
+      matched = true
+    }
+    if (!matched) {
+      result[key] = deepCloneWithPlaceholders(value, replacements)
+    }
+  }
+  return result
+}
+
 /**
  * Extract a purchase template from raw HAR data.
  * Auto-identifies: 商品详情 → 创建订单 → 确认订单 → 支付
@@ -293,7 +345,8 @@ function formatCookieString(cookieMap) {
 export function extractPurchaseTemplate(harInput) {
   let har
   try {
-    har = typeof harInput === 'string' ? JSON.parse(harInput) : harInput
+    const clean = typeof harInput === 'string' ? harInput.replace(/^﻿/, '') : harInput
+    har = typeof clean === 'string' ? JSON.parse(clean) : clean
   } catch {
     return { error: 'HAR JSON 解析失败' }
   }
@@ -403,35 +456,19 @@ export function extractPurchaseTemplate(harInput) {
     }
     if (!matched) continue
 
-    // Auto-detect replaceable fields
-    const replacements = {}
-    if (paramJson) {
-      for (const key of Object.keys(paramJson)) {
-        const lk = key.toLowerCase()
-        if (/itemid|vitemid|productid|item_id/.test(lk)) {
-          replacements[key] = '{{itemId}}'
-        } else if (/skuid|sku_id/.test(lk)) {
-          replacements[key] = '{{skuId}}'
-        } else if (/shopid|vshopid|shop_id/.test(lk)) {
-          replacements[key] = '{{shopId}}'
-        }
-      }
-    }
+    // Auto-detect replaceable fields (recursive into nested objects/arrays)
+    const replacements = []
+    detectReplaceableFields(paramJson, '', replacements)
 
-    // Build replay body: the param JSON object with {{placeholders}}
-    let replayBody = paramJson ? { ...paramJson } : null
-    if (replayBody && Object.keys(replacements).length > 0) {
-      for (const [key, placeholder] of Object.entries(replacements)) {
-        replayBody[key] = placeholder
-      }
-    }
+    // Build replay body: deep clone with {{placeholders}}
+    let replayBody = paramJson ? deepCloneWithPlaceholders(paramJson, replacements) : null
 
     steps.push({
       step: matched.step,
       name: matched.name,
       url,
-      body: replayBody,             // JSON object with {{placeholders}}
-      rawParam: paramStr,           // original param JSON for reference
+      body: replayBody,
+      rawParam: paramStr,
       paramJson,
       replacements
     })
