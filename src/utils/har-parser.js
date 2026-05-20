@@ -6,7 +6,8 @@
 export function parseHAR(harJson) {
   let har
   try {
-    har = typeof harJson === 'string' ? JSON.parse(harJson) : harJson
+    const clean = typeof harJson === 'string' ? harJson.replace(/^﻿/, '') : harJson
+    har = typeof clean === 'string' ? JSON.parse(clean) : clean
   } catch {
     throw new Error('HAR 文件格式错误，无法解析 JSON。请确认粘贴的是完整内容。')
   }
@@ -165,55 +166,86 @@ function extractProducts(entries) {
     const url = getUrl(entry)
     if (!url) continue
 
-    // Product detail page patterns
-    const patterns = [
+    // 1. Try H5 page URL patterns
+    const pagePatterns = [
       /weidian\.com\/item\.html\?itemID=(\d+)/i,
       /h5\.weidian\.com\/item\/(\d+)/i,
       /weidian\.com\/detail\/(\d+)/i,
       /\/item\/(\d+)/i,
       /itemID[=:](\d+)/i,
     ]
-
     let itemId = null
-    for (const pat of patterns) {
+    for (const pat of pagePatterns) {
       const m = url.match(pat)
       if (m) { itemId = m[1]; break }
     }
 
-    if (itemId && !seen.has(itemId)) {
-      seen.add(itemId)
-      products.push({
-        url: getUrl(entry),
-        sku: itemId,
-        name: extractProductName(entry) || `商品 ${itemId.slice(-6)}`,
-        source: 'HAR导入'
-      })
-      continue
+    // 2. Extract itemId from POST body (Weidian API: param={"vitemId":"xxx"})
+    if (!itemId) {
+      itemId = extractItemIdFromBody(entry)
     }
 
-    // Parse API responses for product data
-    if (url.includes('/api/') || url.includes('item') || url.includes('product') || url.includes('goods')) {
+    // 3. Extract itemId from logtake query string (logtake.weidian.com)
+    if (!itemId) {
       try {
-        const body = entry.response?.content?.text
-        if (!body) continue
-        const json = JSON.parse(body)
-        const data = json.data || json.result || json
-        const id = data.itemId || data.itemID || data.productId || data.id
-        if (id && !seen.has(String(id))) {
-          seen.add(String(id))
-          products.push({
-            url: url,
-            sku: String(id),
-            name: data.title || data.name || data.itemName || `商品 ${String(id).slice(-6)}`,
-            targetPrice: data.price || data.salePrice || null,
-            source: 'HAR导入'
-          })
+        const qs = new URL(url).searchParams
+        const logParam = qs.get('log')
+        if (logParam) {
+          const decoded = decodeURIComponent(logParam)
+          const m = decoded.match(/itemId["%]?[=:]["%]?(\d+)/i)
+          if (m) itemId = m[1]
         }
       } catch {}
     }
+
+    if (!itemId || seen.has(itemId)) continue
+    seen.add(itemId)
+
+    // Extract product name from response
+    const name = extractProductName(entry) || `商品 ${itemId.slice(-6)}`
+    const price = extractProductPrice(entry)
+    const productUrl = `https://weidian.com/item.html?itemID=${itemId}`
+
+    products.push({
+      url: productUrl,
+      sku: itemId,
+      name,
+      targetPrice: price,
+      source: 'HAR导入'
+    })
   }
 
   return products
+}
+
+function extractItemIdFromBody(entry) {
+  try {
+    // Fiddler format: postData.params[]
+    const params = entry.request?.postData?.params
+    if (params && Array.isArray(params)) {
+      for (const p of params) {
+        if (p.name === 'param' && p.value) {
+          const json = JSON.parse(p.value)
+          const id = json.vitemId || json.itemId || json.itemID || json.productId
+          if (id) return String(id)
+        }
+      }
+    }
+
+    // Standard HAR format: postData.text
+    const bodyText = entry.request?.postData?.text || entry.request?.body?.text
+    if (bodyText) {
+      // param={json}&context={auth}
+      const pm = bodyText.match(/param=([^&]+)/)
+      if (pm) {
+        const decoded = decodeURIComponent(pm[1])
+        const json = JSON.parse(decoded)
+        const id = json.vitemId || json.itemId || json.itemID || json.productId
+        if (id) return String(id)
+      }
+    }
+  } catch {}
+  return null
 }
 
 function extractAccountName(entries) {
@@ -237,13 +269,51 @@ function extractProductName(entry) {
   try {
     const body = entry.response?.content?.text
     if (!body) return null
+
+    // Try HTML <title>
+    if (!body.startsWith('{')) {
+      const m = body.match(/<title[^>]*>([^<]+)<\/title>/i)
+      if (m) return m[1].trim()
+    }
+
     const json = JSON.parse(body)
+
+    // Weidian API: result.default_model.item_info.item_name
+    const itemInfo = json?.result?.default_model?.item_info
+      || json?.result?.item_info
+      || json?.data?.item_info
+      || json?.data
+      || json?.result
+    if (itemInfo?.item_name) return itemInfo.item_name
+
+    // Common fallbacks
     return json.data?.title || json.data?.itemName || json.data?.name
-      || json.result?.title || json.result?.name || null
+      || json.result?.title || json.result?.name
+      || json.data?.item?.itemName || json.data?.item?.title
+      || null
   } catch {
-    const body = entry.response?.content?.text || ''
-    const m = body.match(/<title[^>]*>([^<]+)<\/title>/i)
-    return m ? m[1].trim() : null
+    return null
+  }
+}
+
+function extractProductPrice(entry) {
+  try {
+    const body = entry.response?.content?.text
+    if (!body) return null
+    const json = JSON.parse(body)
+
+    // Weidian API: result.default_model.item_info
+    const itemInfo = json?.result?.default_model?.item_info
+      || json?.result?.item_info
+      || json?.data?.item_info
+      || json?.data
+      || json?.result
+    const price = itemInfo?.itemLowPrice ?? itemInfo?.price ?? itemInfo?.salePrice
+      ?? json?.data?.price ?? json?.result?.price
+    if (price != null) return Number(price)
+    return null
+  } catch {
+    return null
   }
 }
 
