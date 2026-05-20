@@ -45,30 +45,15 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/thor/, ''),
         secure: false,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            // Weidian API rejects browser CORS/Sec-Fetch headers (code 18)
-            proxyReq.removeHeader('origin')
-            proxyReq.removeHeader('sec-fetch-dest')
-            proxyReq.removeHeader('sec-fetch-mode')
-            proxyReq.removeHeader('sec-fetch-site')
-            proxyReq.setHeader('referer', 'https://servicewechat.com/')
-          })
+        headers: {
+          referer: 'https://servicewechat.com/'
         }
       },
       '/api/logtake': {
         target: 'https://logtake.weidian.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/logtake/, ''),
-        secure: false,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.removeHeader('origin')
-            proxyReq.removeHeader('sec-fetch-dest')
-            proxyReq.removeHeader('sec-fetch-mode')
-            proxyReq.removeHeader('sec-fetch-site')
-          })
-        }
+        secure: false
       }
     }
   }
