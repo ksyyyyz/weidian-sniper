@@ -8,7 +8,8 @@ const snipeLocks = new Set()
 
 /**
  * Execute purchase by replaying a recorded template.
- * Replaces {{itemId}}, {{skuId}}, {{shopId}} in each step's body with actual product values.
+ * Each step's body is a JSON object (or string) with {{placeholders}}.
+ * Placeholders are replaced with actual product values, then passed to apiFetch as an object.
  */
 export async function executeTemplateSnipe(templateId, product) {
   const key = `tpl_${templateId}_${product.id}`
@@ -35,34 +36,37 @@ export async function executeTemplateSnipe(templateId, product) {
       errorMessage: `开始模板抢购: ${product.name} (${steps.length}步)`
     })
 
+    // Determine itemId from product
+    const itemId = product.sku
+      || (product.url?.match(/itemID=(\d+)/) || [])[1]
+      || (product.url?.match(/item\/(\d+)/) || [])[1]
+      || String(product.id)
+
+    const skuId = product.sku || itemId
+    const shopId = product.shopId || ''
+
     for (const step of steps) {
       const stepStart = performance.now()
 
-      // Replace placeholders in body
-      let body = step.body
-      if (product.sku) {
-        body = body.replace(/\{\{itemId\}\}/g, product.sku)
-        body = body.replace(/\{\{skuId\}\}/g, product.sku)
-      }
-      if (product.shopId) {
-        body = body.replace(/\{\{shopId\}\}/g, product.shopId)
+      // Parse body to object
+      let bodyObj
+      try {
+        bodyObj = typeof step.body === 'string' ? JSON.parse(step.body) : step.body
+      } catch {
+        bodyObj = {}
       }
 
-      // Try to extract itemId from product URL as fallback
-      const urlMatch = product.url?.match(/itemID=(\d+)/) || product.url?.match(/item\/(\d+)/)
-      if (urlMatch) {
-        body = body.replace(/\{\{itemId\}\}/g, urlMatch[1])
-      }
-
-      // For remaining unreplaced placeholders, try the product's own ID
-      body = body.replace(/\{\{itemId\}\}/g, product.sku || String(product.id))
-      body = body.replace(/\{\{skuId\}\}/g, product.sku || String(product.id))
-      body = body.replace(/\{\{shopId\}\}/g, product.shopId || '')
+      // Replace placeholders in all values
+      bodyObj = replacePlaceholders(bodyObj, {
+        '{{itemId}}': itemId,
+        '{{skuId}}': skuId,
+        '{{shopId}}': shopId
+      })
 
       try {
         const result = await apiFetch(step.url, {
           method: 'POST',
-          body,
+          body: bodyObj,
           accountId: product.accountId,
           productId: product.id,
           skipDelay: true,
@@ -89,7 +93,6 @@ export async function executeTemplateSnipe(templateId, product) {
           errorMessage: `步骤「${step.name}」失败: ${err.message}`
         })
 
-        // Don't continue if a step fails (unless it's the last)
         break
       }
     }
@@ -142,6 +145,25 @@ export async function executeTemplateSnipe(templateId, product) {
   } finally {
     snipeLocks.delete(key)
   }
+}
+
+function replacePlaceholders(obj, replacements) {
+  if (!obj || typeof obj !== 'object') return obj
+  const result = Array.isArray(obj) ? [] : {}
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === 'string') {
+      let v = value
+      for (const [placeholder, replacement] of Object.entries(replacements)) {
+        v = v.replace(placeholder, replacement)
+      }
+      result[key] = v
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = replacePlaceholders(value, replacements)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
 }
 
 export function isTemplateSnipeActive() {

@@ -388,7 +388,7 @@ function TemplateImporter({ accountId, onClose, onImported }) {
           step: i,
           name: s.name,
           url: s.url,
-          body: s.rawBody,
+          body: typeof s.body === 'object' ? JSON.stringify(s.body) : (s.rawParam || s.body),
           order: i
         })
       }

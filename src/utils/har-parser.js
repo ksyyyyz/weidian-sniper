@@ -287,11 +287,10 @@ function formatCookieString(cookieMap) {
 
 /**
  * Extract a purchase template from raw HAR data.
- * Auto-identifies: 商品详情 → 加购物车 → 创建订单 → 确认支付
+ * Auto-identifies: 商品详情 → 创建订单 → 确认订单 → 支付
  * Returns template steps with {{itemId}} {{skuId}} {{shopId}} placeholders.
  */
 export function extractPurchaseTemplate(harInput) {
-  // Parse HAR
   let har
   try {
     har = typeof harInput === 'string' ? JSON.parse(harInput) : harInput
@@ -320,50 +319,79 @@ export function extractPurchaseTemplate(harInput) {
     return { error: '没有找到任何请求记录' }
   }
 
-  // Filter to thor.weidian.com POST requests
+  // Filter to thor.weidian.com POST requests (skip CONNECT tunnel entries)
   const weidianPosts = entries.filter(e => {
     const url = e?.request?.url || e?.request?.URL || ''
-    return url.includes('thor.weidian.com') && e?.request?.method?.toUpperCase() === 'POST'
+    const method = e?.request?.method?.toUpperCase() || ''
+    return url.includes('thor.weidian.com') && method === 'POST'
   })
 
   if (!weidianPosts.length) {
-    return { error: '没有找到 thor.weidian.com 的 POST 请求。请确认在微店小程序里走了完整的下单流程。' }
+    return { error: '没有找到 thor.weidian.com 的 POST 请求。\n请确认在微店小程序里走了完整的下单流程。' }
   }
+
+  // URL pattern → step name mapping (Weidian actual API paths)
+  const STEP_PATTERNS = [
+    { pattern: /detail\/getAppletItemInfo/i, name: '商品详情', step: 0 },
+    { pattern: /detail\/getItemSkuInfo/i, name: 'SKU信息', step: 0 },
+    { pattern: /vbuy\/CreateOrder/i, name: '创建订单', step: 1 },
+    { pattern: /vbuy\/ConfirmOrder/i, name: '确认订单', step: 2 },
+    { pattern: /cashier\/pay\.pre/i, name: '支付预检', step: 3 },
+    { pattern: /cashier\/pay\.query\.init/i, name: '支付查询', step: 3 },
+    { pattern: /cashier\/pay\.query\.result/i, name: '支付结果', step: 4 },
+  ]
 
   const steps = []
   const seen = new Set()
 
-  // URL pattern → step name mapping
-  const STEP_PATTERNS = [
-    { pattern: /detail\/getItemDetail/i, name: '查看商品详情', step: 0 },
-    { pattern: /detail\/(get|fetch)/i, name: '查看商品详情', step: 0 },
-    { pattern: /cart\/add/i, name: '加入购物车', step: 1 },
-    { pattern: /cart/i, name: '加入购物车', step: 1 },
-    { pattern: /(order|trade)\/create/i, name: '创建订单', step: 2 },
-    { pattern: /order\/confirm/i, name: '确认订单', step: 2 },
-    { pattern: /(order|trade)\/submit/i, name: '提交支付', step: 3 },
-    { pattern: /order\/pay/i, name: '确认支付', step: 3 },
-    { pattern: /pay/i, name: '确认支付', step: 3 },
-  ]
-
   for (const entry of weidianPosts) {
     const url = entry?.request?.url || entry?.request?.URL || ''
 
-    const dedupeKey = url.replace(/itemId=\d+/g, '').replace(/shopId=\d+/g, '').replace(/itemID=\d+/g, '')
+    // Deduplicate same URL pattern
+    const dedupeKey = url.replace(/\d+/g, '')
     if (seen.has(dedupeKey)) continue
     seen.add(dedupeKey)
 
-    // Extract POST body
-    let rawBody = ''
-    if (entry.request?.postData?.text) {
-      rawBody = entry.request.postData.text
+    // Extract POST body — Fiddler uses postData.params[], standard HAR uses postData.text
+    let paramJson = null
+    let paramStr = ''
+    const params = entry.request?.postData?.params
+    const bodyText = entry.request?.postData?.text
+
+    if (params && Array.isArray(params)) {
+      // Fiddler HAR format: params is [{name: "param", value: "..."}, {name: "context", value: "..."}]
+      for (const p of params) {
+        if (p.name === 'param') {
+          paramStr = p.value
+          try { paramJson = JSON.parse(p.value) } catch { paramJson = null }
+          break
+        }
+      }
+    } else if (bodyText) {
+      // Standard HAR format: text is "param=...&context=..."
+      const paramMatch = bodyText.match(/param=([^&]+)/)
+      if (paramMatch) {
+        paramStr = decodeURIComponent(paramMatch[1])
+        try { paramJson = JSON.parse(paramStr) } catch { paramJson = null }
+      } else {
+        try {
+          paramJson = JSON.parse(decodeURIComponent(bodyText))
+          paramStr = decodeURIComponent(bodyText)
+        } catch {
+          paramStr = bodyText
+        }
+      }
     } else if (entry.request?.body?.text) {
-      rawBody = entry.request.body.text
-    } else if (entry.request?.body) {
-      rawBody = typeof entry.request.body === 'string' ? entry.request.body : ''
+      // Alternate body location
+      const bt = entry.request.body.text
+      const pm = bt.match(/param=([^&]+)/)
+      if (pm) {
+        paramStr = decodeURIComponent(pm[1])
+        try { paramJson = JSON.parse(paramStr) } catch { paramJson = null }
+      }
     }
 
-    if (!rawBody) continue
+    if (!paramStr) continue
 
     // Match step type
     let matched = null
@@ -374,23 +402,6 @@ export function extractPurchaseTemplate(harInput) {
       }
     }
     if (!matched) continue
-
-    // Extract param from body (param=...&context=...)
-    const paramMatch = rawBody.match(/param=([^&]+)/)
-    let paramJson = null
-    let paramStr = ''
-    if (paramMatch) {
-      paramStr = decodeURIComponent(paramMatch[1])
-      try { paramJson = JSON.parse(paramStr) } catch { paramJson = null }
-    } else {
-      try {
-        const decoded = decodeURIComponent(rawBody)
-        paramJson = JSON.parse(decoded)
-        paramStr = decoded
-      } catch {
-        paramStr = rawBody
-      }
-    }
 
     // Auto-detect replaceable fields
     const replacements = {}
@@ -407,19 +418,32 @@ export function extractPurchaseTemplate(harInput) {
       }
     }
 
+    // Build replay body: the param JSON object with {{placeholders}}
+    let replayBody = paramJson ? { ...paramJson } : null
+    if (replayBody && Object.keys(replacements).length > 0) {
+      for (const [key, placeholder] of Object.entries(replacements)) {
+        replayBody[key] = placeholder
+      }
+    }
+
     steps.push({
       step: matched.step,
       name: matched.name,
       url,
-      rawBody,
-      paramStr,
+      body: replayBody,             // JSON object with {{placeholders}}
+      rawParam: paramStr,           // original param JSON for reference
       paramJson,
       replacements
     })
   }
 
   if (!steps.length) {
-    return { error: '在 thor.weidian.com 中找到了 POST 请求，但未能识别下单步骤。\n请确认在微店小程序里走了完整流程（浏览→加购→下单）。' }
+    const foundUrls = weidianPosts.map(e => {
+      const u = e?.request?.url || ''
+      const path = u.replace(/^https?:\/\/thor\.weidian\.com/, '')
+      return '  ' + path
+    }).filter((v, i, a) => a.indexOf(v) === i).slice(0, 10).join('\n')
+    return { error: `在 thor.weidian.com 中找到了 ${weidianPosts.length} 条 POST 请求，但无法匹配下单步骤。\n\n找到的API路径：\n${foundUrls}\n\n请确认在微店小程序里走了完整下单流程（浏览商品→立即购买→创建订单→确认支付）。` }
   }
 
   // Sort by step order, deduplicate same step type (keep last)

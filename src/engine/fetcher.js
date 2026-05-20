@@ -55,9 +55,15 @@ export async function apiFetch(url, options = {}) {
   let reqBody = null
   if (useTokenAuth && method === 'POST' && body) {
     const contextStr = buildContext(account)
-    const paramStr = typeof body === 'object'
-      ? encodeURIComponent(JSON.stringify(body))
-      : body
+    let paramStr
+    if (typeof body === 'object') {
+      paramStr = encodeURIComponent(JSON.stringify(body))
+    } else if (typeof body === 'string') {
+      // If already URL-encoded, use as-is; otherwise encode
+      paramStr = body.includes('%') ? body : encodeURIComponent(body)
+    } else {
+      paramStr = String(body)
+    }
     reqBody = `param=${paramStr}&context=${contextStr}`
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
   } else if (useTokenAuth && method === 'GET' && body) {
