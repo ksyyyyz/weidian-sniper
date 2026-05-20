@@ -79,7 +79,7 @@ function CookieGuide({ onClose, onImport }) {
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
         onClick={onClose}>
-        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[90vh] overflow-y-auto"
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[85dvh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
           <h3 className="text-base font-medium text-white mb-1">获取微店 Cookie</h3>
           <p className="text-xs text-gray-500 mb-4">只需操作一次，之后自动保鲜</p>
@@ -110,7 +110,7 @@ function CookieGuide({ onClose, onImport }) {
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
         onClick={onClose}>
-        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[90vh] overflow-y-auto"
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[85dvh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
 
           {!harResult ? (
@@ -216,7 +216,7 @@ function CookieGuide({ onClose, onImport }) {
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
       onClick={onClose}>
-      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[90vh] overflow-y-auto"
+      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[85dvh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-4">
           <button onClick={() => setMode(null)}

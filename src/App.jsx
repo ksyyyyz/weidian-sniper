@@ -20,7 +20,7 @@ function TabBar() {
   const current = location.pathname === '/' ? '/' : '/' + location.pathname.split('/')[1]
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-[#1a1a2e] border-t border-[#2a2a4a] safe-bottom z-50">
+    <nav className="fixed bottom-0 left-0 right-0 bg-[#1a1a2e] border-t border-[#2a2a4a] tab-safe z-50">
       <div className="flex justify-around items-center h-14 max-w-lg mx-auto">
         {tabs.map(tab => (
           <button
@@ -51,7 +51,7 @@ function AppContent() {
   }, [])
 
   return (
-    <div className="h-full flex flex-col max-w-lg mx-auto">
+    <div className="h-full h-dvh flex flex-col max-w-lg mx-auto">
       <header className="safe-top px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a] shrink-0">
         <h1 className="text-base font-semibold text-white tracking-wide">微店抢购助手</h1>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
@@ -59,7 +59,7 @@ function AppContent() {
         </span>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-16 px-4">
+      <main className="flex-1 overflow-y-auto pb-safari px-4">
         <Routes>
           <Route path="/" element={<Monitor />} />
           <Route path="/products" element={<Products />} />
