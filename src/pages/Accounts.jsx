@@ -13,17 +13,10 @@ function CookieGuide({ onClose, onImport }) {
   const [harResult, setHarResult] = useState(null)
   const [harError, setHarError] = useState('')
   const [harLoading, setHarLoading] = useState(false)
+  const [harText, setHarText] = useState('')
 
-  // Manual mode
-  const [text, setText] = useState('')
-  const [step, setStep] = useState(0)
-
-  const steps = [
-    { title: '下载 Stream', desc: 'App Store 搜索 "Stream" 下载安装', icon: '1' },
-    { title: '开始抓包', desc: '打开 Stream → 点「开始抓包」→ 切到微店随便逛几个页面', icon: '2' },
-    { title: '找到 Cookie', desc: '回到 Stream → 点「停止抓包」→ 点「抓包历史」→ 找一条 weidian.com 的请求点进去', icon: '3' },
-    { title: '复制粘贴', desc: '点「请求」标签 → 长按 Cookie 那一行 → 全选复制，粘贴到下面', icon: '4' },
-  ]
+  // Manual cookie text
+  const [cookieText, setCookieText] = useState('')
 
   const handleHARFile = async (e) => {
     const file = e.target.files[0]
@@ -32,15 +25,32 @@ function CookieGuide({ onClose, onImport }) {
     setHarError('')
     try {
       const text = await file.text()
+      processHAR(text)
+    } catch (err) {
+      setHarError(err.message)
+      setHarLoading(false)
+    }
+  }
+
+  const handleHARPaste = () => {
+    const text = harText.trim()
+    if (!text) return
+    setHarLoading(true)
+    setHarError('')
+    processHAR(text)
+  }
+
+  const processHAR = (text) => {
+    try {
       const result = parseHAR(text)
       if (!result.cookies) {
-        setHarError('HAR 文件中未找到微店 Cookie，请确认抓包时访问过微店')
+        setHarError('未找到微店 Cookie，请确认抓包时访问过微店')
         setHarLoading(false)
         return
       }
       setHarResult(result)
     } catch (err) {
-      setHarError(err.message)
+      setHarError('解析失败: ' + err.message + '\n请确认粘贴的是完整的 HAR 内容')
     }
     setHarLoading(false)
   }
@@ -55,7 +65,7 @@ function CookieGuide({ onClose, onImport }) {
   }
 
   const handleManualSubmit = () => {
-    const trimmed = text.trim()
+    const trimmed = cookieText.trim()
     if (!trimmed) return
     if (!trimmed.includes('=')) {
       alert('Cookie 格式不对，请确保复制了完整的 Cookie 行')
@@ -64,27 +74,24 @@ function CookieGuide({ onClose, onImport }) {
     onImport({ cookie: trimmed, accountName: null, products: [] })
   }
 
-  const handleNext = () => { if (step < steps.length - 1) setStep(step + 1) }
-  const handlePrev = () => { if (step > 0) setStep(step - 1) }
-
   // Choose mode screen
   if (!mode) {
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
         onClick={onClose}>
-        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md safe-bottom"
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[90vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
           <h3 className="text-base font-medium text-white mb-1">获取微店 Cookie</h3>
-          <p className="text-xs text-gray-500 mb-5">选择一种方式，只需操作一次，之后自动保鲜</p>
+          <p className="text-xs text-gray-500 mb-4">只需操作一次，之后自动保鲜</p>
 
           <button onClick={() => setMode('har')}
-            className="w-full mb-3 p-4 bg-purple-600/10 border border-purple-500/30 rounded-xl text-left hover:border-purple-500/60 transition-colors">
+            className="w-full mb-3 p-4 bg-purple-600/10 border border-purple-500/30 rounded-xl text-left active:scale-[0.98] transition-transform">
             <div className="text-sm font-medium text-purple-300 mb-1">一键导入 HAR（推荐）</div>
-            <div className="text-xs text-gray-500">Stream 导出 HAR 文件 → 导入 → 自动识别 Cookie + 商品</div>
+            <div className="text-xs text-gray-500">Stream 导出 HAR 内容 → 粘贴 → 自动识别 Cookie + 商品</div>
           </button>
 
           <button onClick={() => setMode('manual')}
-            className="w-full p-4 bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl text-left hover:border-[#3a3a5a] transition-colors">
+            className="w-full p-4 bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl text-left active:scale-[0.98] transition-transform">
             <div className="text-sm font-medium text-gray-300 mb-1">手动粘贴 Cookie</div>
             <div className="text-xs text-gray-600">从 Stream 请求详情里手动复制 Cookie 粘贴</div>
           </button>
@@ -103,7 +110,7 @@ function CookieGuide({ onClose, onImport }) {
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
         onClick={onClose}>
-        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md safe-bottom"
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[90vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
 
           {!harResult ? (
@@ -111,21 +118,22 @@ function CookieGuide({ onClose, onImport }) {
               <div className="flex items-center gap-3 mb-4">
                 <button onClick={() => setMode(null)}
                   className="text-gray-500 hover:text-white text-lg leading-none">&larr;</button>
-                <h3 className="text-base font-medium text-white">导入 HAR 文件</h3>
+                <h3 className="text-base font-medium text-white">导入 HAR</h3>
               </div>
 
+              {/* Stream instructions */}
               <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-4 mb-4">
                 <p className="text-xs text-gray-400 leading-relaxed">
                   <span className="text-purple-400 font-medium">Stream 导出步骤：</span><br />
-                  1. Stream 抓包历史 → 点右上角「...」<br />
-                  2. 选择「导出」→ 格式选 HAR<br />
-                  3. 保存到「文件」App<br />
-                  4. 回到这里点下方按钮导入
+                  1. Stream 抓包历史 → 右上角「...」<br />
+                  2. 选择「导出」→ 格式选 <b>HAR</b><br />
+                  3. 选「拷贝」或「拷贝到剪贴板」<br />
+                  4. 回到这里长按粘贴到下方输入框
                 </p>
               </div>
 
               {harError && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3 text-xs text-red-400">
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3 text-xs text-red-400 whitespace-pre-line">
                   {harError}
                 </div>
               )}
@@ -136,14 +144,37 @@ function CookieGuide({ onClose, onImport }) {
                   <p className="text-sm text-gray-400">解析中...</p>
                 </div>
               ) : (
-                <label className="block">
-                  <input type="file" accept=".har,.json" onChange={handleHARFile} className="hidden" />
-                  <span className="block w-full text-center py-10 bg-[#0f0f1a] border-2 border-dashed border-purple-500/40 rounded-xl cursor-pointer hover:border-purple-500 transition-colors">
-                    <span className="text-3xl block mb-2">📂</span>
-                    <span className="text-sm text-gray-400">点击选择 HAR 文件</span>
-                    <span className="text-[10px] text-gray-600 block mt-1">.har / .json</span>
-                  </span>
-                </label>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">粘贴 HAR 内容</label>
+                    <textarea
+                      value={harText}
+                      onChange={e => setHarText(e.target.value)}
+                      placeholder="长按此处 → 粘贴 Stream 导出的 HAR 内容..."
+                      className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-[10px] text-gray-300 font-mono resize-none h-24 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <button onClick={handleHARPaste}
+                    disabled={!harText.trim()}
+                    className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl disabled:opacity-40 active:scale-95 transition-transform">
+                    解析 HAR
+                  </button>
+
+                  <div className="relative py-2">
+                    <div className="absolute inset-x-0 top-1/2 border-t border-[#2a2a4a]" />
+                    <span className="relative flex justify-center">
+                      <span className="bg-[#1a1a2e] px-3 text-[10px] text-gray-600">或者</span>
+                    </span>
+                  </div>
+
+                  <label className="block">
+                    <input type="file" accept=".har,.json,.txt,text/*" onChange={handleHARFile} className="hidden" />
+                    <span className="block w-full text-center py-3 bg-[#0f0f1a] border border-dashed border-[#3a3a5a] rounded-xl cursor-pointer active:scale-[0.98] transition-transform">
+                      <span className="text-sm text-gray-400">从文件选择</span>
+                      <span className="text-[10px] text-gray-600 block mt-0.5">先存到「文件」App，再从这里选</span>
+                    </span>
+                  </label>
+                </div>
               )}
 
               <button onClick={onClose}
@@ -170,9 +201,9 @@ function CookieGuide({ onClose, onImport }) {
                 className="w-full py-3 bg-purple-600 text-white text-sm font-medium rounded-xl active:scale-95 transition-transform mb-2">
                 确认导入
               </button>
-              <button onClick={() => { setHarResult(null); setHarError('') }}
+              <button onClick={() => { setHarResult(null); setHarError(''); setHarText('') }}
                 className="w-full py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
-                重新选择
+                重新输入
               </button>
             </>
           )}
@@ -181,64 +212,52 @@ function CookieGuide({ onClose, onImport }) {
     )
   }
 
-  // Manual mode
-  const current = steps[step]
+  // Manual mode — all steps visible, scrollable
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
       onClick={onClose}>
-      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md safe-bottom"
+      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md safe-bottom max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-4">
           <button onClick={() => setMode(null)}
-            className="text-gray-500 hover:text-white text-lg leading-none">&larr;</button>
-          <h3 className="text-base font-medium text-white">手动粘贴 Cookie</h3>
+            className="text-gray-500 hover:text-white text-lg leading-none shrink-0">&larr;</button>
+          <h3 className="text-base font-medium text-white">手动获取 Cookie</h3>
         </div>
 
-        <div className="flex gap-1 mb-4">
-          {steps.map((_, i) => (
-            <div key={i} className={`flex-1 h-1 rounded-full ${i <= step ? 'bg-purple-500' : 'bg-[#2a2a4a]'}`} />
+        {/* All steps on one scrollable view */}
+        <div className="space-y-3 mb-4">
+          {[
+            { icon: '1', title: '下载 Stream', desc: 'App Store 搜索 "Stream" 下载安装' },
+            { icon: '2', title: '开始抓包', desc: '打开 Stream → 点「开始抓包」→ 切到微店随便逛几个页面（确保请求里有微店的链接）' },
+            { icon: '3', title: '复制 Cookie', desc: '回到 Stream → 点「停止抓包」→ 点「抓包历史」→ 找一条 weidian.com 的请求 → 点「请求」→ 长按 Cookie 那一行 → 全选复制' },
+            { icon: '4', title: '粘贴到这里', desc: '回到此页面，长按下方输入框粘贴刚才复制的 Cookie' },
+          ].map((s, i) => (
+            <div key={i} className="flex gap-3">
+              <span className="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                {s.icon}
+              </span>
+              <div>
+                <div className="text-xs font-medium text-white">{s.title}</div>
+                <div className="text-xs text-gray-500 leading-relaxed">{s.desc}</div>
+              </div>
+            </div>
           ))}
         </div>
 
-        <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-4 mb-4">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="w-8 h-8 rounded-full bg-purple-600 text-white text-sm font-bold flex items-center justify-center shrink-0">
-              {current.icon}
-            </span>
-            <span className="text-sm font-medium text-white">{current.title}</span>
-          </div>
-          <p className="text-xs text-gray-400 leading-relaxed">{current.desc}</p>
-        </div>
-
-        <div className="flex gap-2 mb-4">
-          <button onClick={handlePrev} disabled={step === 0}
-            className={`px-3 py-1.5 text-xs rounded-lg ${step === 0 ? 'bg-[#1a1a2e] text-gray-700' : 'bg-[#2a2a4a] text-gray-400 hover:text-white'}`}>
-            上一步
+        {/* Paste area */}
+        <div className="space-y-2 sticky bottom-0 bg-[#1a1a2e] pt-2">
+          <textarea
+            value={cookieText}
+            onChange={e => setCookieText(e.target.value)}
+            placeholder="长按此处粘贴 Cookie..."
+            className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono resize-none h-20 focus:outline-none focus:border-purple-500"
+          />
+          <button onClick={handleManualSubmit}
+            disabled={!cookieText.trim()}
+            className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl disabled:opacity-40 active:scale-95 transition-transform">
+            确认并添加账号
           </button>
-          {step < steps.length - 1 ? (
-            <button onClick={handleNext}
-              className="flex-1 py-1.5 bg-purple-600 text-white text-xs rounded-lg">
-              下一步
-            </button>
-          ) : (
-            <span className="flex-1" />
-          )}
         </div>
-
-        {step === steps.length - 1 && (
-          <div className="space-y-2">
-            <textarea
-              value={text}
-              onChange={e => setText(e.target.value)}
-              placeholder="把复制的 Cookie 粘贴到这里..."
-              className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono resize-none h-20 focus:outline-none focus:border-purple-500"
-            />
-            <button onClick={handleManualSubmit}
-              className="w-full py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl active:scale-95 transition-transform">
-              确认并添加账号
-            </button>
-          </div>
-        )}
 
         <button onClick={onClose}
           className="w-full mt-3 py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
