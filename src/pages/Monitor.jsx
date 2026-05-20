@@ -37,28 +37,34 @@ function Countdown({ hasConfig }) {
 
   useEffect(() => {
     let timer
+    let mounted = true
     const tick = async () => {
-      const ms = await getMsUntilTarget()
-      if (ms === null || ms === undefined) {
-        setDisplay('未设置时间')
-        setIsClose(false)
-        return
+      try {
+        const ms = await getMsUntilTarget()
+        if (!mounted) return
+        if (ms === null || ms === undefined) {
+          setDisplay('未设置时间')
+          setIsClose(false)
+          return
+        }
+        if (ms <= 0) {
+          setDisplay('00:00:00')
+          setIsClose(true)
+          return
+        }
+        const totalSec = Math.floor(ms / 1000)
+        const h = Math.floor(totalSec / 3600)
+        const m = Math.floor((totalSec % 3600) / 60)
+        const s = totalSec % 60
+        setDisplay(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
+        setIsClose(ms < 30000)
+      } catch {
+        // Ignore errors in countdown tick
       }
-      if (ms <= 0) {
-        setDisplay('00:00:00')
-        setIsClose(true)
-        return
-      }
-      const totalSec = Math.floor(ms / 1000)
-      const h = Math.floor(totalSec / 3600)
-      const m = Math.floor((totalSec % 3600) / 60)
-      const s = totalSec % 60
-      setDisplay(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
-      setIsClose(ms < 30000)
     }
     tick()
     timer = setInterval(tick, 100)
-    return () => clearInterval(timer)
+    return () => { mounted = false; clearInterval(timer) }
   }, [hasConfig])
 
   return (

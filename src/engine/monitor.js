@@ -137,9 +137,15 @@ async function pollProduct(product, isWarmup) {
       return
     }
 
-    const { status, data } = result
+    const { status: httpStatus, data } = result
 
     const duration = Math.round(performance.now() - startTime)
+
+    // Skip state processing on HTTP errors (502, etc.) — don't overwrite last known state
+    if (httpStatus >= 500 || httpStatus === 0) {
+      return
+    }
+
     const prevState = lastStates[product.id]
     const newState = extractProductState(data, product)
 
@@ -189,22 +195,24 @@ async function pollProduct(product, isWarmup) {
   }
 }
 
-/**
- * Extract stock state from API response data.
- * This is a template — actual parsing depends on Weidian's API response format.
- */
 function extractProductState(data, product) {
   if (!data) return { buyable: false, stock: 0, status: 'unknown', timestamp: Date.now() }
 
-  // Weidian API response: {status:{code:0}, result:{default_model:{item_info:{...}}}}
   const itemInfo = data?.result?.default_model?.item_info
     || data?.result?.item_info
     || data?.data
 
   if (itemInfo) {
-    const stock = itemInfo.stock ?? itemInfo.totalStock ?? 0
-    const buyable = itemInfo.itemSellable === true && stock > 0
-    const status = buyable ? 'on_sale' : (itemInfo.flag?.is_status_off_shelve ? 'off_shelf' : 'unknown')
+    const stock = Number(itemInfo.stock ?? itemInfo.totalStock ?? 0)
+    const buyable = (itemInfo.itemSellable === true || itemInfo.itemSellable === 1) && stock > 0
+    let status = 'unknown'
+    if (buyable) {
+      status = 'on_sale'
+    } else if (itemInfo.flag && typeof itemInfo.flag === 'object') {
+      status = itemInfo.flag.is_status_off_shelve ? 'off_shelf' : 'unknown'
+    } else {
+      status = String(itemInfo.status ?? itemInfo.sellStatus ?? 'unknown')
+    }
     return { buyable, stock, status, timestamp: Date.now() }
   }
 
@@ -217,8 +225,8 @@ function extractProductState(data, product) {
     data?.status === 'on_sale'
   )
 
-  const stock = data?.data?.stock ?? data?.stock ?? 0
-  const status = data?.data?.status ?? data?.status ?? 'unknown'
+  const stock = Number(data?.data?.stock ?? data?.stock ?? 0)
+  const status = String(data?.data?.status ?? data?.status ?? 'unknown')
 
   return { buyable, stock, status, timestamp: Date.now() }
 }
