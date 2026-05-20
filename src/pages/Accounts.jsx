@@ -84,16 +84,22 @@ function CookieGuide({ onClose, onImport }) {
           <h3 className="text-base font-medium text-white mb-1">获取微店 Cookie</h3>
           <p className="text-xs text-gray-500 mb-4">只需操作一次，之后自动保鲜</p>
 
-          <button onClick={() => setMode('har')}
+          <button onClick={() => setMode('manual')}
             className="w-full mb-3 p-4 bg-purple-600/10 border border-purple-500/30 rounded-xl text-left active:scale-[0.98] transition-transform">
-            <div className="text-sm font-medium text-purple-300 mb-1">一键导入 HAR（推荐）</div>
-            <div className="text-xs text-gray-500">Stream 导出 HAR 内容 → 粘贴 → 自动识别 Cookie + 商品</div>
+            <div className="text-sm font-medium text-purple-300 mb-1">直接粘贴 Cookie（推荐）</div>
+            <div className="text-xs text-gray-500">Stream 抓包 → 点开请求详情 → 拷贝 Cookie 行 → 粘贴到这里</div>
           </button>
 
-          <button onClick={() => setMode('manual')}
+          <button onClick={() => setMode('har')}
+            className="w-full mb-3 p-4 bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl text-left active:scale-[0.98] transition-transform">
+            <div className="text-sm font-medium text-gray-300 mb-1">HAR 文件导入</div>
+            <div className="text-xs text-gray-600">Stream/Charles/Fiddler 导出 HAR → 自动解析 Cookie + 商品</div>
+          </button>
+
+          <button onClick={() => setMode('desktop')}
             className="w-full p-4 bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl text-left active:scale-[0.98] transition-transform">
-            <div className="text-sm font-medium text-gray-300 mb-1">手动粘贴 Cookie</div>
-            <div className="text-xs text-gray-600">从 Stream 请求详情里手动复制 Cookie 粘贴</div>
+            <div className="text-sm font-medium text-gray-300 mb-1">电脑端抓包（mitmproxy）</div>
+            <div className="text-xs text-gray-600">Windows 装 mitmproxy → iPhone 设代理 → 电脑上看 Cookie</div>
           </button>
 
           <button onClick={onClose}
@@ -124,11 +130,12 @@ function CookieGuide({ onClose, onImport }) {
               {/* Stream instructions */}
               <div className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-xl p-4 mb-4">
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  <span className="text-purple-400 font-medium">Stream 导出步骤：</span><br />
-                  1. Stream 抓包历史 → 右上角「...」<br />
-                  2. 选择「导出」→ 格式选 <b>HAR</b><br />
-                  3. 选「拷贝」或「拷贝到剪贴板」<br />
-                  4. 回到这里长按粘贴到下方输入框
+                  <span className="text-purple-400 font-medium">抓包工具导出 HAR：</span><br />
+                  <b>Stream (iPhone):</b> 抓包历史 → 「...」→ 导出 → HAR → 拷贝<br />
+                  <b>Charles:</b> File → Export → HAR<br />
+                  <b>Fiddler:</b> File → Export Sessions → HAR<br />
+                  <b>mitmproxy:</b> mitmweb 界面 → File → Save → HAR<br />
+                  <b>Chrome DevTools:</b> Network → 右键 → Save all as HAR
                 </p>
               </div>
 
@@ -150,7 +157,7 @@ function CookieGuide({ onClose, onImport }) {
                     <textarea
                       value={harText}
                       onChange={e => setHarText(e.target.value)}
-                      placeholder="长按此处 → 粘贴 Stream 导出的 HAR 内容..."
+                      placeholder="把 HAR 内容粘贴到这里 (Ctrl+V)..."
                       className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-[10px] text-gray-300 font-mono resize-none h-24 focus:outline-none focus:border-purple-500"
                     />
                   </div>
@@ -212,6 +219,54 @@ function CookieGuide({ onClose, onImport }) {
     )
   }
 
+  // Desktop proxy mode — mitmproxy guide
+  if (mode === 'desktop') {
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
+        onClick={onClose}>
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={() => setMode(null)}
+              className="text-gray-500 hover:text-white text-lg leading-none shrink-0">&larr;</button>
+            <h3 className="text-base font-medium text-white">电脑端抓包</h3>
+          </div>
+
+          <div className="space-y-3 mb-4">
+            {[
+              { title: '安装 mitmproxy', desc: '浏览器打开 mitmproxy.org → 下载 Windows 版 → 安装' },
+              { title: '启动 mitmweb', desc: 'Win+R 输入 cmd 回车 → 输入 mitmweb 回车 → 浏览器自动打开 http://localhost:8081' },
+              { title: 'iPhone 设代理', desc: 'iPhone 设置 → WiFi → 点当前网络右边的 ⓘ → HTTP 代理 → 手动 → 服务器填电脑IP，端口 8080' },
+              { title: '安装证书', desc: 'iPhone Safari 打开 mitm.it → 点 Apple 图标下载证书 → 设置 → 通用 → VPN与设备管理 → 安装' },
+              { title: '信任证书', desc: '设置 → 通用 → 关于本机 → 证书信任设置 → 开启 mitmproxy 证书' },
+              { title: '抓取 Cookie', desc: 'iPhone 上打开微店APP逛逛 → 电脑 mitmweb 界面找 weidian.com 的请求 → 点 Request → 复制 Cookie 那一行' },
+              { title: '粘贴 Cookie', desc: '回到本页面，点下面的「直接粘贴 Cookie」粘贴即可' },
+            ].map((s, i) => (
+              <div key={i} className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <div>
+                  <div className="text-xs font-medium text-white">{s.title}</div>
+                  <div className="text-xs text-gray-500 leading-relaxed">{s.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={() => setMode('manual')}
+            className="w-full mb-2 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl">
+            去粘贴 Cookie
+          </button>
+          <button onClick={onClose}
+            className="w-full py-2.5 bg-[#2a2a4a] text-gray-400 text-sm rounded-xl">
+            关闭
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // Manual mode — all steps visible, scrollable
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
@@ -221,16 +276,20 @@ function CookieGuide({ onClose, onImport }) {
         <div className="flex items-center gap-3 mb-4">
           <button onClick={() => setMode(null)}
             className="text-gray-500 hover:text-white text-lg leading-none shrink-0">&larr;</button>
-          <h3 className="text-base font-medium text-white">手动获取 Cookie</h3>
+          <h3 className="text-base font-medium text-white">直接粘贴 Cookie</h3>
+        </div>
+
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mb-4 text-xs text-green-400">
+          这是最可靠的方式。HAR 导入可能因微店 SSL 证书绑定而失败，但手动复制 Cookie 总是能用。
         </div>
 
         {/* All steps on one scrollable view */}
         <div className="space-y-3 mb-4">
           {[
-            { icon: '1', title: '下载 Stream', desc: 'App Store 搜索 "Stream" 下载安装' },
-            { icon: '2', title: '开始抓包', desc: '打开 Stream → 点「开始抓包」→ 切到微店随便逛几个页面（确保请求里有微店的链接）' },
-            { icon: '3', title: '复制 Cookie', desc: '回到 Stream → 点「停止抓包」→ 点「抓包历史」→ 找一条 weidian.com 的请求 → 点「请求」→ 长按 Cookie 那一行 → 全选复制' },
-            { icon: '4', title: '粘贴到这里', desc: '回到此页面，长按下方输入框粘贴刚才复制的 Cookie' },
+            { icon: '1', title: 'iPhone 装 Stream', desc: 'App Store 搜索 "Stream" 下载。打开后按提示安装 HTTPS 证书并信任。' },
+            { icon: '2', title: '开始抓包', desc: 'Stream 点「开始抓包」→ 切到微店 APP 随便逛几个页面 → 回到 Stream 点「停止抓包」' },
+            { icon: '3', title: '复制 Cookie', desc: '点「抓包历史」→ 找一条域名含 weidian.com 的请求 → 点它 → 点「请求」标签 → 找到 Cookie 那一行 → 长按 → 全选 → 拷贝' },
+            { icon: '4', title: '粘贴到这里', desc: '在电脑上打开此页面，把复制的 Cookie 发到电脑（微信/QQ 发送），Ctrl+V 粘贴到下方输入框' },
           ].map((s, i) => (
             <div key={i} className="flex gap-3">
               <span className="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
@@ -249,7 +308,7 @@ function CookieGuide({ onClose, onImport }) {
           <textarea
             value={cookieText}
             onChange={e => setCookieText(e.target.value)}
-            placeholder="长按此处粘贴 Cookie..."
+            placeholder="把 Cookie 粘贴到这里 (Ctrl+V)..."
             className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono resize-none h-20 focus:outline-none focus:border-purple-500"
           />
           <button onClick={handleManualSubmit}

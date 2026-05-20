@@ -1,5 +1,6 @@
 /**
- * Parse a HAR (HTTP Archive) file exported from Stream/Charles/Proxyman.
+ * Parse a HAR (HTTP Archive) file.
+ * Supports exports from Stream, Charles, Proxyman, Fiddler, mitmproxy, Chrome DevTools.
  * Extracts cookies and product URLs from Weidian requests.
  */
 export function parseHAR(harJson) {
@@ -7,71 +8,159 @@ export function parseHAR(harJson) {
   try {
     har = typeof harJson === 'string' ? JSON.parse(harJson) : harJson
   } catch {
-    throw new Error('HAR 文件格式错误，无法解析 JSON')
+    throw new Error('HAR 文件格式错误，无法解析 JSON。请确认粘贴的是完整内容。')
   }
 
-  if (!har.log || !har.log.entries || !Array.isArray(har.log.entries)) {
-    throw new Error('无效的 HAR 文件：缺少 log.entries')
+  // Support different HAR structures
+  let entries = []
+  if (har.log?.entries) {
+    entries = har.log.entries
+  } else if (har.log?.entries?.[0]?.request) {
+    entries = har.log.entries
+  } else if (Array.isArray(har.entries)) {
+    entries = har.entries
+  } else if (Array.isArray(har)) {
+    entries = har
+  } else {
+    // Try to find entries anywhere in the object
+    for (const key of Object.keys(har)) {
+      const val = har[key]
+      if (val?.log?.entries) { entries = val.log.entries; break }
+      if (Array.isArray(val?.entries)) { entries = val.entries; break }
+      if (Array.isArray(val) && val.length > 0 && val[0]?.request) { entries = val; break }
+    }
   }
 
-  const entries = har.log.entries
+  if (!entries || entries.length === 0) {
+    throw new Error(
+      '未能从文件中提取到任何请求记录。\n' +
+      '请确认导出时选择了 HAR 格式（不是 PDF/CSV）。\n' +
+      'Stream: 抓包历史 → 右上角「...」→ 导出 → 选择 HAR → 拷贝'
+    )
+  }
 
-  // 1. Extract cookies from weidian requests
-  const cookies = extractCookies(entries)
-
-  // 2. Extract product URLs
-  const products = extractProducts(entries)
-
-  // 3. Try to find account name from response
-  const accountName = extractAccountName(entries)
-
-  return { cookies, products, accountName, totalRequests: entries.length }
-}
-
-function extractCookies(entries) {
-  const cookieMap = new Map()
+  // Collect diagnostics
+  const allDomains = new Set()
+  const weidianEntries = []
 
   for (const entry of entries) {
-    const url = entry.request?.url || ''
-    if (!isWeidianUrl(url)) continue
+    const url = getUrl(entry)
+    if (!url) continue
 
-    // Parse cookies from request headers
-    const cookieHeader = findHeader(entry.request?.headers, 'cookie')
-    if (cookieHeader) {
-      const pairs = cookieHeader.split(';')
+    try {
+      const host = new URL(url).hostname
+      allDomains.add(host)
+
+      if (isWeidianRelated(host)) {
+        weidianEntries.push({ url, host, entry })
+      }
+    } catch {}
+  }
+
+  const diag = {
+    totalEntries: entries.length,
+    uniqueDomains: [...allDomains].sort(),
+    weidianEntries: weidianEntries.length,
+    weidianDomains: [...new Set(weidianEntries.map(e => e.host))].sort()
+  }
+
+  // If no Weidian requests at all
+  if (weidianEntries.length === 0) {
+    const domainList = diag.uniqueDomains.slice(0, 15).join('\n  ')
+    throw new Error(
+      `在 ${diag.totalEntries} 条请求中没有找到微店相关的域名。\n\n` +
+      `找到的域名（前15个）：\n  ${domainList || '(无)'}\n\n` +
+      '请确认：\n' +
+      '1. 抓包时确实打开过微店APP或小程序\n' +
+      '2. Stream 开启了 HTTPS 解密（设置 → SSL 证书 → 安装并信任）\n' +
+      '3. 导出时选择了「HAR」格式'
+    )
+  }
+
+  // Extract cookies from Weidian requests
+  const cookieMap = new Map()
+  for (const { entry } of weidianEntries) {
+    extractCookiesFromEntry(entry, cookieMap)
+  }
+
+  if (cookieMap.size === 0) {
+    throw new Error(
+      `找到了 ${diag.weidianEntries.length} 条微店请求，但未提取到 Cookie。\n` +
+      `微店域名: ${diag.weidianDomains.join(', ')}\n\n` +
+      '可能原因：\n' +
+      '1. 微店APP使用了证书绑定（SSL Pinning），Stream 无法解密\n' +
+      '2. 请求头中没有 Cookie 字段\n\n' +
+      '请尝试用「手动粘贴 Cookie」方式，或换用电脑端抓包工具（mitmproxy/Fiddler）'
+    )
+  }
+
+  // Extract products
+  const products = extractProducts(weidianEntries.map(e => e.entry))
+
+  // Try to find account name
+  const accountName = extractAccountName(weidianEntries.map(e => e.entry))
+
+  return {
+    cookies: formatCookieString(cookieMap),
+    products,
+    accountName,
+    totalRequests: entries.length,
+    diagnostics: diag
+  }
+}
+
+function getUrl(entry) {
+  return entry?.request?.url || entry?.request?.URL || ''
+}
+
+function extractCookiesFromEntry(entry, cookieMap) {
+  const headers = entry.request?.headers || entry.request?.header || []
+
+  // Try "Cookie" header (case-insensitive)
+  for (const h of headers) {
+    const name = (h.name || h.key || '').toLowerCase()
+    if (name === 'cookie' || name === 'Cookie') {
+      const pairs = (h.value || '').split(';')
       for (const pair of pairs) {
-        const [key, ...valParts] = pair.trim().split('=')
-        if (key && valParts.length > 0) {
-          const name = key.trim()
-          const value = valParts.join('=').trim()
-          // Skip analytics/tracking cookies
-          if (!isTrackingCookie(name)) {
-            cookieMap.set(name, value)
+        const eqIdx = pair.indexOf('=')
+        if (eqIdx > 0) {
+          const key = pair.substring(0, eqIdx).trim()
+          const value = pair.substring(eqIdx + 1).trim()
+          if (key && value && !isTrackingCookie(key)) {
+            cookieMap.set(key, value)
           }
         }
       }
     }
+  }
 
-    // Also check parsed cookies array
-    if (entry.request?.cookies) {
-      for (const c of entry.request.cookies) {
-        if (c.name && c.value && !isTrackingCookie(c.name)) {
-          cookieMap.set(c.name, c.value)
-        }
-      }
+  // Also check parsed cookies array in request
+  const cookies = entry.request?.cookies || []
+  for (const c of cookies) {
+    if (c.name && c.value && !isTrackingCookie(c.name)) {
+      cookieMap.set(c.name, c.value)
     }
+  }
 
-    // Check Set-Cookie in response
-    const setCookie = findHeader(entry.response?.headers, 'set-cookie')
-    if (setCookie) {
-      const match = setCookie.match(/^([^=]+)=([^;]+)/)
+  // Check Set-Cookie in response headers
+  const respHeaders = entry.response?.headers || entry.response?.header || []
+  for (const h of respHeaders) {
+    const name = (h.name || h.key || '').toLowerCase()
+    if (name === 'set-cookie') {
+      const match = (h.value || '').match(/^([^=]+)=([^;]+)/)
       if (match && !isTrackingCookie(match[1])) {
         cookieMap.set(match[1].trim(), match[2].trim())
       }
     }
   }
 
-  return formatCookieString(cookieMap)
+  // Also check response cookies array
+  const respCookies = entry.response?.cookies || []
+  for (const c of respCookies) {
+    if (c.name && c.value && !isTrackingCookie(c.name)) {
+      cookieMap.set(c.name, c.value)
+    }
+  }
 }
 
 function extractProducts(entries) {
@@ -79,52 +168,54 @@ function extractProducts(entries) {
   const seen = new Set()
 
   for (const entry of entries) {
-    const url = entry.request?.url || ''
-    if (!isWeidianUrl(url)) continue
+    const url = getUrl(entry)
+    if (!url) continue
 
-    // Look for product detail pages
-    const itemMatch = url.match(/weidian\.com\/item\.html\?itemID=(\d+)/i)
-      || url.match(/h5\.weidian\.com\/item\/(\d+)/i)
-      || url.match(/weidian\.com\/detail\/(\d+)/i)
+    // Product detail page patterns
+    const patterns = [
+      /weidian\.com\/item\.html\?itemID=(\d+)/i,
+      /h5\.weidian\.com\/item\/(\d+)/i,
+      /weidian\.com\/detail\/(\d+)/i,
+      /\/item\/(\d+)/i,
+      /itemID[=:](\d+)/i,
+    ]
 
-    if (itemMatch) {
-      const itemId = itemMatch[1]
-      if (seen.has(itemId)) continue
+    let itemId = null
+    for (const pat of patterns) {
+      const m = url.match(pat)
+      if (m) { itemId = m[1]; break }
+    }
+
+    if (itemId && !seen.has(itemId)) {
       seen.add(itemId)
-
-      const product = {
-        url: entry.request.url,
+      products.push({
+        url: getUrl(entry),
         sku: itemId,
         name: extractProductName(entry) || `商品 ${itemId.slice(-6)}`,
         source: 'HAR导入'
-      }
-      products.push(product)
+      })
       continue
     }
 
-    // Also check API calls that contain product info
-    if (url.includes('/api/item') || url.includes('/api/product') || url.includes('/api/goods')) {
+    // Parse API responses for product data
+    if (url.includes('/api/') || url.includes('item') || url.includes('product') || url.includes('goods')) {
       try {
-        const respBody = entry.response?.content?.text
-        if (respBody) {
-          const json = JSON.parse(respBody)
-          const itemData = json.data || json.result || json
-          if (itemData.itemId || itemData.itemID || itemData.productId) {
-            const id = itemData.itemId || itemData.itemID || itemData.productId
-            if (seen.has(String(id))) continue
-            seen.add(String(id))
-            products.push({
-              url: url,
-              sku: String(id),
-              name: itemData.title || itemData.name || itemData.itemName || `商品 ${String(id).slice(-6)}`,
-              targetPrice: itemData.price || itemData.salePrice || null,
-              source: 'HAR导入'
-            })
-          }
+        const body = entry.response?.content?.text
+        if (!body) continue
+        const json = JSON.parse(body)
+        const data = json.data || json.result || json
+        const id = data.itemId || data.itemID || data.productId || data.id
+        if (id && !seen.has(String(id))) {
+          seen.add(String(id))
+          products.push({
+            url: url,
+            sku: String(id),
+            name: data.title || data.name || data.itemName || `商品 ${String(id).slice(-6)}`,
+            targetPrice: data.price || data.salePrice || null,
+            source: 'HAR导入'
+          })
         }
-      } catch {
-        // Can't parse response — skip
-      }
+      } catch {}
     }
   }
 
@@ -133,71 +224,55 @@ function extractProducts(entries) {
 
 function extractAccountName(entries) {
   for (const entry of entries) {
-    if (!isWeidianUrl(entry.request?.url)) continue
     try {
       const body = entry.response?.content?.text
-      if (body) {
-        const json = JSON.parse(body)
-        const nickname = json.data?.userInfo?.nickname
-          || json.data?.nickname
-          || json.result?.nickname
-          || json.data?.user?.nickname
-        if (nickname) return nickname
-      }
-    } catch {
-      // skip
-    }
+      if (!body) continue
+      const json = JSON.parse(body)
+      const nickname = json.data?.userInfo?.nickname
+        || json.data?.nickname
+        || json.result?.nickname
+        || json.data?.user?.nickname
+        || json.data?.nickName
+      if (nickname) return nickname
+    } catch {}
   }
   return null
 }
 
 function extractProductName(entry) {
-  // Try response body first
   try {
     const body = entry.response?.content?.text
-    if (body) {
-      // Try JSON
-      const json = JSON.parse(body)
-      const name = json.data?.title || json.data?.itemName || json.data?.name
-        || json.result?.title || json.result?.name
-      if (name) return name
-    }
+    if (!body) return null
+    const json = JSON.parse(body)
+    return json.data?.title || json.data?.itemName || json.data?.name
+      || json.result?.title || json.result?.name || null
   } catch {
-    // Not JSON — try HTML title
     const body = entry.response?.content?.text || ''
-    const titleMatch = body.match(/<title>([^<]+)<\/title>/i)
-    if (titleMatch) return titleMatch[1].trim()
+    const m = body.match(/<title[^>]*>([^<]+)<\/title>/i)
+    return m ? m[1].trim() : null
   }
-  return null
 }
 
-function findHeader(headers, name) {
-  if (!headers) return null
-  const lower = name.toLowerCase()
-  for (const h of headers) {
-    if (h.name?.toLowerCase() === lower) return h.value
-  }
-  return null
-}
-
-function isWeidianUrl(url) {
-  try {
-    const host = new URL(url).hostname
-    return host.includes('weidian.com')
-  } catch {
-    return false
-  }
+function isWeidianRelated(hostname) {
+  const domains = [
+    'weidian.com', 'koudai.com', 'vdian.net',
+    'weixinshop.com', 'wdt.com',
+  ]
+  return domains.some(d => hostname.includes(d))
 }
 
 function isTrackingCookie(name) {
-  const tracking = ['_ga', '_gid', '_gat', 'Hm_', 'sensorsdata', 'utm_', '_pk_', '_hj']
-  return tracking.some(t => name.toLowerCase().startsWith(t.toLowerCase()))
+  const tracking = ['_ga', '_gid', '_gat', 'hm_', 'sensorsdata', 'utm_', '_pk_', '_hj', 'cnzz', 'tongji']
+  return tracking.some(t => name.toLowerCase().startsWith(t))
 }
 
 function formatCookieString(cookieMap) {
   const parts = []
-  // Put known important cookies first
-  const priority = ['sessionid', 'token', '_token', 'uid', 'userid', 'user_id', 'login_token', 'auth_token']
+  const priority = [
+    'sessionid', 'token', '_token', 'uid', 'userid', 'user_id',
+    'login_token', 'auth_token', 'access_token', 'JSESSIONID',
+    'PHPSESSID', 'sid', 'wdt_token', 'vd_token'
+  ]
   for (const key of priority) {
     if (cookieMap.has(key)) {
       parts.push(`${key}=${cookieMap.get(key)}`)
@@ -210,13 +285,10 @@ function formatCookieString(cookieMap) {
   return parts.join('; ')
 }
 
-/**
- * Quick summary of what was found in the HAR.
- */
 export function getHARSummary(result) {
   const lines = []
   if (result.cookies) {
-    const count = result.cookies.split(';').length
+    const count = result.cookies.split(';').filter(s => s.trim()).length
     lines.push(`${count} 个 Cookie 字段`)
   }
   if (result.products.length > 0) {
@@ -231,6 +303,8 @@ export function getHARSummary(result) {
   if (result.accountName) {
     lines.push(`账号名: ${result.accountName}`)
   }
-  lines.push(`共分析 ${result.totalRequests} 条请求`)
+  if (result.diagnostics) {
+    lines.push(`共分析 ${result.totalRequests} 条请求，微店相关 ${result.diagnostics.weidianEntries} 条`)
+  }
   return lines
 }
