@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getEnabledAccounts, getEnabledProducts, getLogs } from '../db'
+import { getEnabledAccounts, getEnabledProducts, getLogs, getSetting, setSetting } from '../db'
 import { startMonitoring, stopMonitoring, isMonitoring, onMonitorStateChange } from '../engine/monitor'
 import { syncTime, getMsUntilTarget, getCorrectedTime } from '../engine/time-sync'
-import { getSetting } from '../db'
 
 function StatusLight({ running, warmupActive, hasConfig }) {
   let color, label, pulse
@@ -81,6 +80,9 @@ export default function Monitor() {
   const [recentLogs, setRecentLogs] = useState([])
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
+  const [targetTime, setTargetTime] = useState('')
+  const [dateInput, setDateInput] = useState('')
+  const [timeInput, setTimeInput] = useState('')
 
   const checkConfig = useCallback(async () => {
     const [accts, prods] = await Promise.all([getEnabledAccounts(), getEnabledProducts()])
@@ -98,6 +100,44 @@ export default function Monitor() {
     })
     return unsub
   }, [checkConfig])
+
+  // Load saved target time
+  useEffect(() => {
+    (async () => {
+      const val = await getSetting('targetTime')
+      if (val) {
+        setTargetTime(val)
+        setDateInput(val.slice(0, 10))
+        setTimeInput(val.slice(11, 16))
+      }
+    })()
+  }, [])
+
+  const saveTargetTime = async (val) => {
+    setTargetTime(val)
+    await setSetting('targetTime', val)
+    if (val) {
+      setDateInput(val.slice(0, 10))
+      setTimeInput(val.slice(11, 16))
+    } else {
+      setDateInput('')
+      setTimeInput('')
+    }
+  }
+
+  const handleDateBlur = () => {
+    const d = dateInput.trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return
+    const t = timeInput || '20:00'
+    saveTargetTime(`${d}T${t}`)
+  }
+
+  const handleTimeBlur = () => {
+    const t = timeInput.trim()
+    if (!/^\d{2}:\d{2}$/.test(t)) return
+    const d = dateInput || new Date().toISOString().slice(0, 10)
+    saveTargetTime(`${d}T${t}`)
+  }
 
   // Refresh logs periodically when running
   useEffect(() => {
@@ -159,6 +199,60 @@ export default function Monitor() {
 
       {/* Countdown */}
       <Countdown hasConfig={hasConfig} />
+
+      {/* Time setter */}
+      {!running && (
+        <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl p-4">
+          <h3 className="text-xs font-medium text-gray-400 mb-3">设定开抢时间</h3>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-600 block mb-1">日期</label>
+              <input
+                type="text"
+                value={dateInput}
+                onChange={e => setDateInput(e.target.value)}
+                onBlur={handleDateBlur}
+                className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 text-center focus:outline-none focus:border-purple-500"
+                placeholder="2026-05-20"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-600 block mb-1">时间</label>
+              <input
+                type="text"
+                value={timeInput}
+                onChange={e => setTimeInput(e.target.value)}
+                onBlur={handleTimeBlur}
+                className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 text-center focus:outline-none focus:border-purple-500"
+                placeholder="20:00"
+              />
+            </div>
+          </div>
+          {targetTime && (
+            <p className="text-xs text-green-400 mb-2">
+              已设: {new Date(targetTime).toLocaleString('zh-CN')}
+            </p>
+          )}
+          <div className="flex gap-1.5 flex-wrap">
+            {[
+              { label: '1分钟后', get: () => new Date(Date.now() + 60000).toISOString().slice(0, 16) },
+              { label: '5分钟后', get: () => new Date(Date.now() + 300000).toISOString().slice(0, 16) },
+              { label: '今晚20:00', get: () => { const d = new Date(); d.setHours(20, 0, 0, 0); return d.toISOString().slice(0, 16) } },
+              { label: '今晚21:00', get: () => { const d = new Date(); d.setHours(21, 0, 0, 0); return d.toISOString().slice(0, 16) } },
+              { label: '明早10:00', get: () => { const d = new Date(Date.now() + 86400000); d.setHours(10, 0, 0, 0); return d.toISOString().slice(0, 16) } },
+              { label: '清除', get: () => '' },
+            ].map(p => (
+              <button
+                key={p.label}
+                onClick={() => saveTargetTime(p.get())}
+                className="text-[10px] px-2 py-1 rounded-full bg-[#2a2a4a] text-gray-400 hover:bg-purple-600 hover:text-white transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Account selector (when stopped) */}
       {!running && accounts.length > 0 && (
