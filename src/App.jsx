@@ -51,7 +51,7 @@ function AppContent() {
   }, [])
 
   return (
-    <div className="h-full h-dvh flex flex-col max-w-lg mx-auto">
+    <div className="flex-1 min-h-0 flex flex-col max-w-lg mx-auto w-full overflow-hidden">
       <header className="safe-top px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a] shrink-0">
         <h1 className="text-base font-semibold text-white tracking-wide">微店抢购助手</h1>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
@@ -59,7 +59,7 @@ function AppContent() {
         </span>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-safari px-4">
+      <main className="flex-1 min-h-0 overflow-y-auto ios-scroll pb-safari px-4">
         <Routes>
           <Route path="/" element={<Monitor />} />
           <Route path="/products" element={<Products />} />
