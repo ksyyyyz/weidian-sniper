@@ -339,6 +339,9 @@ function TemplateImporter({ accountId, onClose, onImported }) {
   const [templateName, setTemplateName] = useState('')
   const [templateSteps, setTemplateSteps] = useState([])
   const [totalFound, setTotalFound] = useState(0)
+  const [harProducts, setHarProducts] = useState([])
+  const [harCookies, setHarCookies] = useState('')
+  const [harAccountName, setHarAccountName] = useState('')
 
   const handleFile = async (e) => {
     const file = e.target.files[0]
@@ -363,15 +366,28 @@ function TemplateImporter({ accountId, onClose, onImported }) {
   }
 
   const processHAR = (text) => {
-    const result = extractPurchaseTemplate(text)
-    if (result.error) {
-      setError(result.error)
+    const tplResult = extractPurchaseTemplate(text)
+    if (tplResult.error) {
+      setError(tplResult.error)
       setLoading(false)
       return
     }
-    setTemplateSteps(result.steps)
-    setTotalFound(result.totalFound)
-    setTemplateName(result.templateName)
+    setTemplateSteps(tplResult.steps)
+    setTotalFound(tplResult.totalFound)
+    setTemplateName(tplResult.templateName)
+
+    // Also extract products, cookies, account name from HAR
+    try {
+      const harResult = parseHAR(text)
+      setHarProducts(harResult.products || [])
+      setHarCookies(harResult.cookies || '')
+      setHarAccountName(harResult.accountName || '')
+    } catch {
+      setHarProducts([])
+      setHarCookies('')
+      setHarAccountName('')
+    }
+
     setLoading(false)
     setStep(1)
   }
@@ -392,8 +408,29 @@ function TemplateImporter({ accountId, onClose, onImported }) {
           order: i
         })
       }
+
+      // Auto-add detected products linked to this account + template
+      let savedProducts = 0
+      for (const p of harProducts) {
+        if (!p.sku) continue
+        try {
+          await addProduct({
+            name: p.name,
+            url: p.url || `https://weidian.com/item.html?itemID=${p.sku}`,
+            sku: p.sku,
+            targetPrice: p.targetPrice || null,
+            accountId,
+            templateId: tplId,
+            enabled: 1
+          })
+          savedProducts++
+        } catch { /* skip duplicates */ }
+      }
+      // Store saved count for display
+      setHarProducts(prev => prev.map(p => ({ ...p, _saved: true })))
+
       setStep(2)
-      onImported?.(tplId)
+      onImported?.(tplId, savedProducts)
     } catch (err) {
       setError('保存失败: ' + err.message)
     }
@@ -517,6 +554,30 @@ function TemplateImporter({ accountId, onClose, onImported }) {
               <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3 text-xs text-red-400">{error}</div>
             )}
 
+            {/* Detected products */}
+            {harProducts.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-gray-400">识别到 {harProducts.length} 个商品</span>
+                  {harAccountName && <span className="text-[10px] text-purple-400">账号: {harAccountName}</span>}
+                </div>
+                <div className="space-y-1 max-h-36 overflow-y-auto">
+                  {harProducts.map((p, i) => (
+                    <div key={i} className="bg-[#0f0f1a] border border-[#2a2a4a] rounded-lg px-3 py-2 flex items-center gap-2">
+                      <span className="text-[10px] text-gray-600 w-5 shrink-0">#{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-200 truncate">{p.name}</p>
+                        <p className="text-[10px] text-gray-600 truncate">SKU: {p.sku}</p>
+                      </div>
+                      {p.targetPrice && (
+                        <span className="text-[10px] text-purple-400 shrink-0">¥{p.targetPrice}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button onClick={handleSave}
               disabled={loading}
               className="w-full py-3 bg-purple-600 text-white text-sm font-medium rounded-xl active:scale-95 transition-transform mb-2">
@@ -536,12 +597,14 @@ function TemplateImporter({ accountId, onClose, onImported }) {
               <span className="text-3xl">✅</span>
               <h3 className="text-base font-medium text-white mt-2">模板保存成功</h3>
               <p className="text-xs text-gray-500 mt-1">
-                {templateSteps.length} 个步骤已保存。添加商品时绑定此模板即可一键抢购。
+                {templateSteps.length} 个步骤已保存
+                {harProducts.length > 0 && <span>，{harProducts.length} 个商品已自动添加到商品列表</span>}
               </p>
 
               <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mt-4 text-xs text-green-400 text-left">
                 <b>下一步：</b><br />
-                去「商品」页 → 添加商品 → 在"下单模板"下拉框里选「{templateName}」→ 开启监控
+                去「商品」页查看已自动添加的商品，开启「启用监控」开关<br />
+                然后在「监控」页设置目标时间，点「开始监控」即可
               </div>
             </div>
 
