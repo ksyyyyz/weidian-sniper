@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "微店Cookie提取器",
+  "version": "1.0",
+  "description": "提取微店登录Cookie，配合微店抢购助手使用",
+  "permissions": ["cookies", "activeTab"],
+  "host_permissions": ["*://*.weidian.com/*", "*://weidian.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "提取微店Cookie"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}
