@@ -114,26 +114,32 @@ export default function Settings() {
 
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div>
-            <label className="text-[10px] text-gray-600 block mb-1">日期</label>
+            <label className="text-[10px] text-gray-600 block mb-1">日期（2026-05-20）</label>
             <input
+              key={`date-${settings.targetTime || 'empty'}`}
               type="text"
-              value={settings.targetTime ? settings.targetTime.slice(0, 10) : ''}
-              onChange={e => {
+              defaultValue={settings.targetTime ? settings.targetTime.slice(0, 10) : ''}
+              onBlur={e => {
+                const date = e.target.value.trim()
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
                 const time = settings.targetTime ? settings.targetTime.slice(11, 16) : '20:00'
-                update('targetTime', `${e.target.value}T${time}`)
+                update('targetTime', `${date}T${time}`)
               }}
               className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 text-center"
               placeholder="2026-05-20"
             />
           </div>
           <div>
-            <label className="text-[10px] text-gray-600 block mb-1">时间</label>
+            <label className="text-[10px] text-gray-600 block mb-1">时间（20:00）</label>
             <input
+              key={`time-${settings.targetTime || 'empty'}`}
               type="text"
-              value={settings.targetTime ? settings.targetTime.slice(11, 16) : ''}
-              onChange={e => {
+              defaultValue={settings.targetTime ? settings.targetTime.slice(11, 16) : ''}
+              onBlur={e => {
+                const time = e.target.value.trim()
+                if (!/^\d{2}:\d{2}$/.test(time)) return
                 const date = settings.targetTime ? settings.targetTime.slice(0, 10) : new Date().toISOString().slice(0, 10)
-                update('targetTime', `${date}T${e.target.value}`)
+                update('targetTime', `${date}T${time}`)
               }}
               className="w-full bg-[#0f0f1a] border border-[#3a3a5a] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 text-center"
               placeholder="20:00"
