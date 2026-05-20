@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getEnabledAccounts, getEnabledProducts, getLogs, getSetting, setSetting } from '../db'
 import { startMonitoring, stopMonitoring, isMonitoring, onMonitorStateChange } from '../engine/monitor'
-import { syncTime, getMsUntilTarget, getCorrectedTime } from '../engine/time-sync'
+import { syncTime, getMsUntilTarget, getCorrectedTime, getServerOffset } from '../engine/time-sync'
 
 function StatusLight({ running, warmupActive, hasConfig }) {
   let color, label, pulse
@@ -31,41 +31,54 @@ function StatusLight({ running, warmupActive, hasConfig }) {
   )
 }
 
-function Countdown({ hasConfig }) {
+function Countdown({ targetTime }) {
   const [display, setDisplay] = useState('--:--:--')
   const [isClose, setIsClose] = useState(false)
+  const targetRef = useRef(null)
 
+  // Parse targetTime and cache target timestamp + offset
+  useEffect(() => {
+    if (!targetTime) {
+      targetRef.current = null
+      setDisplay('未设置时间')
+      setIsClose(false)
+      return
+    }
+    const targetMs = new Date(targetTime).getTime()
+    if (isNaN(targetMs)) {
+      targetRef.current = null
+      setDisplay('无效时间')
+      setIsClose(false)
+      return
+    }
+    targetRef.current = targetMs
+  }, [targetTime])
+
+  // Tick every 100ms, computing remaining time locally (no IndexedDB)
   useEffect(() => {
     let timer
     let mounted = true
-    const tick = async () => {
-      try {
-        const ms = await getMsUntilTarget()
-        if (!mounted) return
-        if (ms === null || ms === undefined) {
-          setDisplay('未设置时间')
-          setIsClose(false)
-          return
-        }
-        if (ms <= 0) {
-          setDisplay('00:00:00')
-          setIsClose(true)
-          return
-        }
-        const totalSec = Math.floor(ms / 1000)
-        const h = Math.floor(totalSec / 3600)
-        const m = Math.floor((totalSec % 3600) / 60)
-        const s = totalSec % 60
-        setDisplay(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
-        setIsClose(ms < 30000)
-      } catch {
-        // Ignore errors in countdown tick
+    const tick = () => {
+      const target = targetRef.current
+      if (target === null) return
+      const ms = target - Date.now()
+      if (!mounted) return
+      if (ms <= 0) {
+        setDisplay('00:00:00')
+        setIsClose(true)
+        return
       }
+      const totalSec = Math.floor(ms / 1000)
+      const h = Math.floor(totalSec / 3600)
+      const m = Math.floor((totalSec % 3600) / 60)
+      const s = totalSec % 60
+      setDisplay(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
+      setIsClose(ms < 30000)
     }
     tick()
     timer = setInterval(tick, 100)
     return () => { mounted = false; clearInterval(timer) }
-  }, [hasConfig])
+  }, [])
 
   return (
     <div className={`text-center py-4 ${isClose ? 'text-red-400' : 'text-gray-400'}`}>
@@ -204,7 +217,7 @@ export default function Monitor() {
       )}
 
       {/* Countdown */}
-      <Countdown hasConfig={hasConfig} />
+      <Countdown targetTime={targetTime} />
 
       {/* Time setter */}
       {!running && (
