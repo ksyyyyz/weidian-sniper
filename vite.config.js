@@ -38,6 +38,20 @@ export default defineConfig({
   ],
   server: {
     host: '0.0.0.0',
-    port: 5173
+    port: 5173,
+    proxy: {
+      '/api/thor': {
+        target: 'https://thor.weidian.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/thor/, ''),
+        secure: false
+      },
+      '/api/logtake': {
+        target: 'https://logtake.weidian.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/logtake/, ''),
+        secure: false
+      }
+    }
   }
 })

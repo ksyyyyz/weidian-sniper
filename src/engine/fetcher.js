@@ -24,6 +24,12 @@ export async function apiFetch(url, options = {}) {
     referer = null
   } = options
 
+  // In dev mode, rewrite Weidian API URLs through Vite proxy to bypass CORS
+  if (import.meta.env.DEV) {
+    url = url.replace(/^https?:\/\/thor\.weidian\.com/, '/api/thor')
+      .replace(/^https?:\/\/logtake\.weidian\.com/, '/api/logtake')
+  }
+
   // Gate: banned account
   if (accountId && isBanned(accountId)) {
     throw new FetchError('账号已被风控限制，请检查账号状态', 'BANNED', 403)
