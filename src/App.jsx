@@ -51,11 +51,11 @@ function AppContent() {
   }, [])
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col max-w-lg mx-auto w-full overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col max-w-lg mx-auto w-full">
       <header className="safe-top px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a] shrink-0">
         <h1 className="text-base font-semibold text-white tracking-wide">微店抢购助手</h1>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
-          v2
+          v3
         </span>
       </header>
 
