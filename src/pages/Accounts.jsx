@@ -77,9 +77,9 @@ function CookieGuide({ onClose, onImport }) {
   // Choose mode screen
   if (!mode) {
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
         onClick={onClose}>
-        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md min-h-0 safe-bottom max-h-[80vh] overflow-y-auto"
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
           <h3 className="text-base font-medium text-white mb-1">获取微店 Cookie</h3>
           <p className="text-xs text-gray-500 mb-4">只需操作一次，之后自动保鲜</p>
@@ -108,9 +108,9 @@ function CookieGuide({ onClose, onImport }) {
   // HAR mode
   if (mode === 'har') {
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
         onClick={onClose}>
-        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md min-h-0 safe-bottom max-h-[80vh] overflow-y-auto"
+        <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}>
 
           {!harResult ? (
@@ -214,9 +214,9 @@ function CookieGuide({ onClose, onImport }) {
 
   // Manual mode — all steps visible, scrollable
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center"
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center"
       onClick={onClose}>
-      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-md min-h-0 safe-bottom max-h-[80vh] overflow-y-auto"
+      <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-5 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-4">
           <button onClick={() => setMode(null)}
@@ -466,9 +466,9 @@ export default function Accounts() {
 
       {/* Add/Edit form modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center"
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
           onClick={(e) => { if (e.target === e.currentTarget) resetForm() }}>
-          <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto safe-bottom"
+          <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-6 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-medium text-white mb-4">
               {editing ? '编辑账号' : '添加账号'}

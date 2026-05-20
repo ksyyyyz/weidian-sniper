@@ -184,9 +184,9 @@ export default function Products() {
 
       {/* Add/Edit form modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center"
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
           onClick={(e) => { if (e.target === e.currentTarget) resetForm() }}>
-          <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto safe-bottom"
+          <div className="bg-[#1a1a2e] border border-[#3a3a5a] rounded-2xl p-6 w-full max-w-md min-h-0 max-h-[80vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-medium text-white mb-4">
               {editing ? '编辑商品' : '添加商品'}

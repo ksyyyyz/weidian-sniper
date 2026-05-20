@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react'
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import Monitor from './pages/Monitor'
 import Products from './pages/Products'
@@ -14,78 +13,77 @@ const tabs = [
   { path: '/accounts', label: '账号', icon: '👤' },
 ]
 
-function TabBar() {
+function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const current = location.pathname === '/' ? '/' : '/' + location.pathname.split('/')[1]
 
   return (
-    <nav className="bg-[#1a1a2e] border-t border-[#2a2a4a] tab-safe z-50">
-      <div className="flex justify-around items-center h-14 max-w-lg mx-auto">
+    <aside className="w-56 shrink-0 bg-[#1a1a2e] border-r border-[#2a2a4a] flex flex-col select-none">
+      <div className="px-5 py-4 border-b border-[#2a2a4a]">
+        <h1 className="text-sm font-semibold text-white tracking-wide">微店抢购助手</h1>
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25 inline-block mt-1">
+          桌面版
+        </span>
+      </div>
+
+      <nav className="flex-1 py-3 space-y-0.5 px-2">
         {tabs.map(tab => (
           <button
             key={tab.path}
             onClick={() => navigate(tab.path)}
-            className={`flex flex-col items-center justify-center w-full h-full transition-colors ${
-              current === tab.path ? 'text-purple-400' : 'text-gray-500'
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+              current === tab.path
+                ? 'bg-purple-600/20 text-purple-400'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-[#22223a]'
             }`}
           >
-            <span className="text-lg leading-none">{tab.icon}</span>
-            <span className="text-[10px] mt-0.5">{tab.label}</span>
+            <span className="text-lg leading-none w-6 text-center">{tab.icon}</span>
+            <span className="text-sm">{tab.label}</span>
           </button>
         ))}
+      </nav>
+
+      <div className="px-4 py-3 border-t border-[#2a2a4a]">
+        <p className="text-[10px] text-gray-600 text-center">仅供安全测试使用</p>
       </div>
-    </nav>
+    </aside>
+  )
+}
+
+function PageHeader() {
+  const location = useLocation()
+  const current = location.pathname === '/' ? '/' : '/' + location.pathname.split('/')[1]
+  const label = tabs.find(t => t.path === current)?.label || '监控'
+
+  return (
+    <header className="px-6 py-4 flex items-center justify-between border-b border-[#2a2a4a] shrink-0">
+      <h2 className="text-sm font-medium text-gray-300">{label}</h2>
+      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
+        HTTP API 模式
+      </span>
+    </header>
   )
 }
 
 function AppContent() {
-  const [showInstall, setShowInstall] = useState(false)
-
-  useEffect(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || navigator.standalone
-    if (!isStandalone && !localStorage.getItem('install-dismissed')) {
-      setShowInstall(true)
-    }
-  }, [])
-
   return (
-    <div className="absolute inset-0 grid grid-rows-[auto_1fr_auto] max-w-lg mx-auto w-full">
-      <header className="safe-top px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a]">
-        <h1 className="text-base font-semibold text-white tracking-wide">微店抢购助手</h1>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
-          v6
-        </span>
-      </header>
+    <div className="h-full flex">
+      <Sidebar />
 
-      <main className="overflow-y-auto ios-scroll px-4">
-        <Routes>
-          <Route path="/" element={<Monitor />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/logs" element={<Logs />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/accounts" element={<Accounts />} />
-        </Routes>
-      </main>
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <PageHeader />
 
-      <TabBar />
-
-      {showInstall && (
-        <div className="fixed top-12 left-4 right-4 bg-[#1e1e3a] border border-purple-500/30 rounded-xl p-4 shadow-lg z-50 max-w-sm mx-auto">
-          <p className="text-sm text-gray-300 mb-3">
-            添加到主屏幕，体验更流畅的全屏模式
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setShowInstall(false); localStorage.setItem('install-dismissed', '1') }}
-              className="flex-1 py-2 px-4 rounded-lg bg-purple-600 text-white text-sm font-medium"
-            >
-              知道了
-            </button>
-          </div>
+        <div className="flex-1 px-6 py-4 max-w-4xl">
+          <Routes>
+            <Route path="/" element={<Monitor />} />
+            <Route path="/products" element={<Products />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/accounts" element={<Accounts />} />
+          </Routes>
         </div>
-      )}
+      </main>
     </div>
   )
 }
