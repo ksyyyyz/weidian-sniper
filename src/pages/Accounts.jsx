@@ -331,6 +331,21 @@ function ContextGuide({ onClose, onImport }) {
   )
 }
 
+function extractContextFromEntry(entry) {
+  try {
+    const params = entry.request?.postData?.params
+    if (params && Array.isArray(params)) {
+      for (const p of params) {
+        if (p.name === 'context' && p.value) return p.value
+      }
+    }
+    const bodyText = entry.request?.postData?.text || entry.request?.body?.text || ''
+    const cm = bodyText.match(/context=([^&]+)/)
+    if (cm) return decodeURIComponent(cm[1])
+  } catch {}
+  return null
+}
+
 function TemplateImporter({ accountId, onClose, onImported }) {
   const [step, setStep] = useState(0) // 0=input, 1=preview, 2=done
   const [harText, setHarText] = useState('')
@@ -342,6 +357,7 @@ function TemplateImporter({ accountId, onClose, onImported }) {
   const [harProducts, setHarProducts] = useState([])
   const [harCookies, setHarCookies] = useState('')
   const [harAccountName, setHarAccountName] = useState('')
+  const [harContext, setHarContext] = useState('')
 
   const handleFile = async (e) => {
     const file = e.target.files[0]
@@ -388,6 +404,17 @@ function TemplateImporter({ accountId, onClose, onImported }) {
       setHarAccountName('')
     }
 
+    // Extract context from HAR entries for account auto-fill
+    try {
+      const clean = text.replace(/^﻿/, '')
+      const harJson = JSON.parse(clean)
+      const allEntries = harJson.log?.entries || harJson.entries || []
+      for (const e of allEntries) {
+        const ctx = extractContextFromEntry(e)
+        if (ctx) { setHarContext(ctx); break }
+      }
+    } catch {}
+
     setLoading(false)
     setStep(1)
   }
@@ -407,6 +434,23 @@ function TemplateImporter({ accountId, onClose, onImported }) {
           body: typeof s.body === 'object' ? JSON.stringify(s.body) : (s.rawParam || s.body),
           order: i
         })
+      }
+
+      // Auto-fill account context if missing
+      if (harContext) {
+        try {
+          const acct = await getAccounts().then(all => all.find(a => a.id === accountId))
+          if (acct && !acct.contextRaw && !acct.contextEncoded && !acct.token) {
+            const parsed = parseAccountContext(harContext)
+            await updateAccount(accountId, {
+              name: acct.name,
+              contextRaw: parsed.contextRaw || harContext,
+              contextEncoded: parsed.contextEncoded || encodeURIComponent(harContext),
+              userAgent: acct.userAgent || '',
+              enabled: acct.enabled ? 1 : 0
+            })
+          }
+        } catch {}
       }
 
       // Auto-add detected products linked to this account + template
