@@ -120,7 +120,7 @@ async function pollProduct(product, isWarmup) {
     let result
     if (useTokenAuth) {
       const detailApi = await getSetting('snipe_detail_api') || 'https://thor.weidian.com/detail/getAppletItemInfo/1.0'
-      const params = { itemId: String(product.sku || ''), shopId: '' }
+      const params = { vitemId: String(product.sku || ''), shopId: '' }
       result = await apiPost(detailApi, params, {
         accountId: product.accountId,
         productId: product.id,
